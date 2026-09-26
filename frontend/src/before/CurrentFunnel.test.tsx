@@ -22,14 +22,17 @@ describe('CurrentFunnel', () => {
   it('home: a split ZIP goes to the utility question, like the live homepage', async () => {
     vi.mocked(data.resolveUtility).mockResolvedValue({ info: null, options: [ONCOR, AUSTIN], city: 'Pflugerville' });
     render(<Harness initialScreen="home" />);
+    expect(screen.getByLabelText('ZIP code')).toHaveValue('');
+    await userEvent.type(screen.getByLabelText('ZIP code'), '78660');
     await userEvent.click(screen.getByText('See available plans'));
     expect(await screen.findByText("Who's your local utility?")).toBeInTheDocument();
     expect(screen.getByText('78660')).toBeInTheDocument();
   });
 
   it('home: a single-utility ZIP goes straight into the funnel', async () => {
-    vi.mocked(data.resolveUtility).mockResolvedValue({ info: ONCOR, options: [ONCOR], city: 'Dallas' });
+    vi.mocked(data.resolveUtility).mockResolvedValue({ info: ONCOR, options: [ONCOR], city: 'Houston' });
     render(<Harness initialScreen="home" />);
+    await userEvent.type(screen.getByLabelText('ZIP code'), '77096');
     await userEvent.click(screen.getByText('See available plans'));
     expect(await screen.findByText('Step 2 of 10')).toBeInTheDocument();
   });

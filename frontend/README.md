@@ -19,9 +19,11 @@ npm run dev          # http://localhost:3000
 | `#/after/<zip\|risk\|usage\|compare\|plan\|done\|deadend>` | Our funnel |
 
 Query params mirror Base's funnel: `?postal_code=77096&utility=CENTERPOINT`.
-Good demo ZIPs: **78660** (Pflugerville, split between Oncor and Austin Energy, so it
-shows the one bill question), **77096** (Houston, CenterPoint, the 72 h outage year),
-**77590** (Texas City, TNMP), **78701** (Austin Energy, no retail choice).
+Demo ZIP: **77096** (Houston, CenterPoint, the 72 h outage year). Both ZIP boxes start
+empty, so type it. Others: **78660** (Pflugerville, split between Oncor and Austin
+Energy, so it shows the one "who sends your bill?" question), **77590** (Texas City,
+TNMP), **78701** (Austin Energy, no retail choice). Screens opened directly by URL
+default to 77096.
 
 The backend is optional. If `VITE_API_URL` (default `http://localhost:8000`) is
 reachable, step 2 adds NOAA severe-weather history from `backend/main.py`. Without it,

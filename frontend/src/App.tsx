@@ -9,7 +9,7 @@ import { Compare } from './compare/Compare';
 //   #/after/<screen>     our funnel
 // Query string mirrors Base's funnel: ?postal_code=78660&utility=ONCOR (&embed=1 hides the top bar)
 
-const DEFAULT_ZIP = '78660';
+const DEFAULT_ZIP = '77096'; // Houston (CenterPoint): demo default for deep-linked screens
 
 function useHashRoute() {
   const [hash, setHash] = useState(window.location.hash);

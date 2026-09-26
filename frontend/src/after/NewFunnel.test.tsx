@@ -31,6 +31,8 @@ const BASE_PLAN: data.Plan = {
 const MARKET_PLAN: data.Plan = { ...BASE_PLAN, company: 'Rival Co', product: 'Rival Plan', kwh500: 0.2, kwh1000: 0.18, kwh2000: 0.17 };
 
 /** Drives NewFunnel the same way App.tsx does - screen/go as controlled state. */
+const typeZip = () => userEvent.type(screen.getByLabelText('ZIP code'), '75201');
+
 function Harness({ initialScreen = 'zip' as AfterScreen, leadId = null as string | null }) {
   const [screen, setScreen] = useState<AfterScreen>(initialScreen);
   return <NewFunnel screen={screen} go={setScreen} initialZip="75201" utilityParam="ONCOR" leadId={leadId} />;
@@ -56,6 +58,7 @@ describe('NewFunnel', () => {
       vi.mocked(data.resolveUtility).mockReturnValue(new Promise(r => (resolveUtil = r)));
       render(<Harness />);
       expect(screen.getByText('Continue')).toBeDisabled();
+      await typeZip();
       resolveUtil({ info: ONCOR, options: [], city: 'Dallas' });
       await waitFor(() => expect(screen.getByText('Continue')).toBeEnabled());
     });
@@ -64,6 +67,7 @@ describe('NewFunnel', () => {
       const austin = { code: 'AUSTIN_ENERGY', name: 'Austin Energy', choice: false, region: 'City of Austin' };
       vi.mocked(data.resolveUtility).mockResolvedValue({ info: null, options: [ONCOR, austin], city: 'Pflugerville' });
       render(<Harness />);
+      await typeZip();
       expect(await screen.findByText(/Who sends your electric bill/)).toBeInTheDocument();
       expect(screen.getByText('Continue')).toBeDisabled();
       await userEvent.click(screen.getByText('Another company'));
@@ -74,12 +78,20 @@ describe('NewFunnel', () => {
     it('shows a not-found message and keeps Continue disabled for an unmapped zip', async () => {
       vi.mocked(data.resolveUtility).mockResolvedValue({ info: null, options: [], city: null });
       render(<Harness />);
+      await typeZip();
       expect(await screen.findByText(/don't have ZIP/)).toBeInTheDocument();
       expect(screen.getByText('Continue')).toBeDisabled();
     });
 
+    it('starts with an empty ZIP box and no lookup', () => {
+      render(<Harness />);
+      expect(screen.getByLabelText('ZIP code')).toHaveValue('');
+      expect(data.resolveUtility).not.toHaveBeenCalled();
+    });
+
     it('advances to risk on Continue', async () => {
       render(<Harness />);
+      await typeZip();
       await waitFor(() => expect(screen.getByText('Continue')).toBeEnabled());
       await userEvent.click(screen.getByText('Continue'));
       expect(await screen.findByText(/grid, by the numbers/i)).toBeInTheDocument();

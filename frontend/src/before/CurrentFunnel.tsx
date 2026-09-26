@@ -11,13 +11,13 @@ export type BeforeScreen = (typeof BEFORE_SCREENS)[number];
 interface Props {
   screen: BeforeScreen;
   go: (s: BeforeScreen) => void;
-  /** ZIP prefilled on the homepage and shown on the utility screen */
+  /** ZIP shown on the utility screen when it's opened directly (not typed on the homepage) */
   zip?: string;
 }
 
 export function CurrentFunnel({ screen, go, zip = '78660' }: Props) {
   const [selected, setSelected] = useState<'energy' | 'battery' | null>(null);
-  const [homeZip, setHomeZip] = useState(zip);
+  const [homeZip, setHomeZip] = useState(''); // Base's homepage box starts empty
 
   // home -> utility -> reason -> provider -> plan only. 'home' is Base's homepage ZIP
   // box; 'utility' is the question it shows for split ZIPs before the funnel starts. 'deadend' is NOT the "next" screen
@@ -90,7 +90,7 @@ export function CurrentFunnel({ screen, go, zip = '78660' }: Props) {
         <div className="split" style={{ alignItems: 'stretch' }}>
           <div style={{ padding: '24px 8px' }}>
             <div className="step-label" style={{ marginBottom: 6 }}>
-              {homeZip}
+              {homeZip || zip}
             </div>
             <h1 className="h1">Who's your local utility?</h1>
             <p className="sub">So we can show the right plan and next steps for this address.</p>
