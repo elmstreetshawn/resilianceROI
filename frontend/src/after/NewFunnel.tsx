@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Option, Step } from '../components/Step';
 import { OutageChart } from '../components/OutageChart';
+import { BillUploader, type BillData } from '../components/BillUploader';
 import { fetchWeatherRisk, type WeatherRisk } from '../lib/api';
 import {
   BATTERY_KWH,
@@ -240,8 +241,28 @@ export function NewFunnel({ screen, go, initialZip, utilityParam }: Props) {
 
   // ---------- 3. Usage (PowerToChoose step) ----------
   if (screen === 'usage') {
+    const [showBillUpload, setShowBillUpload] = useState(true);
+
+    const handleBillUploadSuccess = (data: BillData) => {
+      setKwh(data.monthly_kwh);
+      setShowBillUpload(false);
+      // Auto-proceed to compare
+      setTimeout(() => go('compare'), 500);
+    };
+
     return (
       <Step step={STEP_OF.usage} total={TOTAL} onBack={back}>
+        {showBillUpload && (
+          <>
+            <BillUploader
+              zip={zip}
+              onSuccess={handleBillUploadSuccess}
+              onCancel={() => setShowBillUpload(false)}
+            />
+            <div style={{ marginBottom: 24 }} />
+          </>
+        )}
+
         <h1 className="h1">About how much electricity do you use a month?</h1>
         <p className="sub">
           Texas plans are priced at 500, 1,000 and 2,000 kWh, and some plans charge more if you use less. Check a recent
