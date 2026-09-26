@@ -1,15 +1,18 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Option, Step } from '../components/Step';
 import { OutageChart } from '../components/OutageChart';
 import { BillUploader, type BillData } from '../components/BillUploader';
-import { fetchWeatherRisk, type WeatherRisk } from '../lib/api';
+import { MethodologyPanel } from '../components/MethodologyPanel';
+import { SiteSurvey } from '../components/SiteSurvey';
 import {
-  BATTERY_KWH,
-  DEFAULT_MONTHLY_KWH,
-  OUTAGE_COSTS,
-  OUTAGE_COST_TOTAL,
-  backupHours,
-} from '../lib/battery';
+  createLead,
+  fetchLead,
+  fetchStageTwoAnalysis,
+  fetchWeatherRisk,
+  type StageTwoAnalysis,
+  type WeatherRisk,
+} from '../lib/api';
+import { BATTERY_KWH, DEFAULT_MONTHLY_KWH, OUTAGE_COST_TOTAL, backupHours } from '../lib/battery';
 import {
   median,
   minUsageTraps,
@@ -23,11 +26,13 @@ import {
   type UtilityInfo,
 } from '../lib/data';
 
-export const AFTER_SCREENS = ['zip', 'risk', 'usage', 'compare', 'plan', 'done', 'deadend'] as const;
+export const AFTER_SCREENS = ['zip', 'risk', 'usage', 'compare', 'plan', 'done', 'deadend', 'survey'] as const;
 export type AfterScreen = (typeof AFTER_SCREENS)[number];
 
-// Step numbers shown in the header; 'deadend' and 'done' are terminal
-const STEP_OF: Record<AfterScreen, number> = { zip: 1, risk: 2, usage: 3, compare: 4, plan: 5, done: 6, deadend: 6 };
+// Step numbers shown in the header; 'deadend', 'done' and 'survey' are terminal
+const STEP_OF: Record<AfterScreen, number> = {
+  zip: 1, risk: 2, usage: 3, compare: 4, plan: 5, done: 6, deadend: 6, survey: 6,
+};
 const TOTAL = 6;
 
 const REASONS = [
@@ -48,9 +53,11 @@ interface Props {
   go: (s: AfterScreen) => void;
   initialZip: string;
   utilityParam: string | null;
+  /** From ?lead=<id> - present when the customer is resuming a previously saved lead. */
+  leadId: string | null;
 }
 
-export function NewFunnel({ screen, go, initialZip, utilityParam }: Props) {
+export function NewFunnel({ screen, go, initialZip, utilityParam, leadId }: Props) {
   const [zipInput, setZipInput] = useState(initialZip);
   const [zip, setZip] = useState(initialZip);
   const [utility, setUtility] = useState<UtilityInfo | null>(null);
@@ -61,7 +68,60 @@ export function NewFunnel({ screen, go, initialZip, utilityParam }: Props) {
   const [weather, setWeather] = useState<WeatherRisk | null>(null);
   const [reason, setReason] = useState<Reason | null>(null);
   const [kwh, setKwh] = useState<number>(1000);
+  // Set by OCR (the real extracted bill amount) - when absent, estimated from plan pricing.
+  const [billAmount, setBillAmount] = useState<number | null>(null);
+  const [analysis, setAnalysis] = useState<StageTwoAnalysis | null>(null);
   const [choice, setChoice] = useState<'energy' | 'battery' | null>(null);
+  // Declared at top level, not inside the 'usage' screen branch below - conditionally
+  // calling useState only on some screens breaks React's Rules of Hooks (the hook count
+  // must be identical on every render of this component) and crashes on screen changes.
+  const [showBillUpload, setShowBillUpload] = useState(true);
+  // Set once we have a persisted lead - either resumed from ?lead=<id>, or created the
+  // moment a battery plan is picked. This is what makes the funnel resumable: the
+  // customer can leave and come back later to finish the site survey via a saved link,
+  // instead of the whole thing living only in this component's state.
+  const [savedLeadId, setSavedLeadId] = useState<string | null>(null);
+
+  // Resume a saved lead: restore its zip/reason/usage/choice and jump straight to the
+  // site survey, so a customer who left mid-flow doesn't have to redo the funnel.
+  useEffect(() => {
+    if (!leadId) return;
+    let live = true;
+    fetchLead(leadId).then(lead => {
+      if (!live || !lead) return;
+      setSavedLeadId(lead.id);
+      setZip(lead.zip_code);
+      setZipInput(lead.zip_code);
+      if (REASONS.some(r => r.id === lead.reason)) setReason(lead.reason as Reason);
+      if (lead.monthly_kwh) setKwh(lead.monthly_kwh);
+      if (lead.choice === 'energy' || lead.choice === 'battery') setChoice(lead.choice);
+      go('survey');
+    });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadId]);
+
+  // The moment a battery plan is picked (and we're not already resuming a saved lead),
+  // persist it - this is what a resumable link points at. creatingLead guards the
+  // in-flight window: savedLeadId alone only blocks a second call AFTER the first
+  // resolves, so a re-render while the request is still pending could otherwise fire
+  // a duplicate create.
+  const creatingLead = useRef(false);
+  useEffect(() => {
+    if (screen !== 'done' || choice !== 'battery' || savedLeadId || creatingLead.current) return;
+    let live = true;
+    creatingLead.current = true;
+    createLead(zip, utility?.code ?? '', kwh, reason ?? '', choice).then(id => {
+      creatingLead.current = false;
+      if (live && id) setSavedLeadId(id);
+    });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen, choice]);
 
   // Everything downstream is derived from the ZIP, so any screen can be deep-linked
   useEffect(() => {
@@ -91,10 +151,26 @@ export function NewFunnel({ screen, go, initialZip, utilityParam }: Props) {
     };
   }, [zip, initialZip, utilityParam]);
 
+  // Real ROI/qualification math (backend/main.py's /stage2/analyze: risk score from
+  // ERCOT outage correlation + NOAA severe weather + utility SAIDI, payback years,
+  // monthly savings) - refetches whenever the ZIP or usage estimate changes.
+  useEffect(() => {
+    if (!zip || kwh < 100) return;
+    let live = true;
+    const bill = billAmount ?? estimateMonthlyBill(plans, kwh);
+    fetchStageTwoAnalysis(zip, kwh, bill).then(a => {
+      if (live) setAnalysis(a);
+    });
+    return () => {
+      live = false;
+    };
+  }, [zip, kwh, billAmount, plans]);
+
   const back = () => {
     const order: AfterScreen[] = ['zip', 'risk', 'usage', 'compare', 'plan'];
     const i = order.indexOf(screen);
-    if (screen === 'done' || screen === 'deadend') go('plan');
+    if (screen === 'deadend') go('plan');
+    else if (screen === 'done' || screen === 'survey') go(screen === 'survey' ? 'done' : 'plan');
     else if (i > 0) go(order[i - 1]);
   };
 
@@ -205,6 +281,19 @@ export function NewFunnel({ screen, go, initialZip, utilityParam }: Props) {
                 <div className="stat__value">{Math.round(backup.essentials)}h</div>
                 <div className="stat__label">Backup a {BATTERY_KWH} kWh Base battery gives your essentials</div>
               </div>
+              {weather && (
+                <div className="stat">
+                  <div
+                    className={`stat__value ${weather.risk_tier === 'HIGH' || weather.risk_tier === 'SEVERE' ? 'stat__value--alert' : ''}`}
+                  >
+                    {weather.risk_tier}
+                  </div>
+                  <div className="stat__label">
+                    Weather + grid risk score ({Math.round(weather.risk_score)}/100), from ERCOT outage history + NOAA
+                    severe weather
+                  </div>
+                </div>
+              )}
             </div>
             <OutageChart rows={reliability} utilityName={utility?.name ?? ''} />
           </>
@@ -213,11 +302,15 @@ export function NewFunnel({ screen, go, initialZip, utilityParam }: Props) {
         )}
 
         {weather && (
-          <div className="callout" style={{ marginTop: 12 }}>
-            <strong>Severe weather near you:</strong> {weather.severe_weather_events_5yr} events in 5 years (NOAA).{' '}
-            {weather.weather_risk_summary}
+          <div
+            className={`callout ${weather.risk_tier === 'HIGH' || weather.risk_tier === 'SEVERE' ? 'callout--warn' : ''}`}
+            style={{ marginTop: 12 }}
+          >
+            <strong>Severe weather near you:</strong> ~{weather.avg_events_per_year.toFixed(1)} events/year, most
+            commonly {weather.most_common_event_type.toLowerCase()} (NOAA Storm Events). {weather.weather_risk_summary}
           </div>
         )}
+        {weather && <MethodologyPanel zip={zip} />}
 
         <div className="spacer" />
         <div className="h2">Knowing this, what matters most to you?</div>
@@ -241,10 +334,10 @@ export function NewFunnel({ screen, go, initialZip, utilityParam }: Props) {
 
   // ---------- 3. Usage (PowerToChoose step) ----------
   if (screen === 'usage') {
-    const [showBillUpload, setShowBillUpload] = useState(true);
-
     const handleBillUploadSuccess = (data: BillData) => {
       setKwh(data.monthly_kwh);
+      setBillAmount(data.bill_amount);
+      if (data.analysis) setAnalysis(data.analysis);
       setShowBillUpload(false);
       // Auto-proceed to compare
       setTimeout(() => go('compare'), 500);
@@ -306,8 +399,11 @@ export function NewFunnel({ screen, go, initialZip, utilityParam }: Props) {
 
   // ---------- 5. Plan choice with "Help me decide" (replaces step 7) ----------
   if (screen === 'plan') {
-    const recommendBattery = reason !== 'rate' || (worst?.saidi_minutes ?? 0) >= 600;
-    const worstHours = (worst?.saidi_minutes ?? 0) / 60;
+    // Real qualification (ERCOT outage correlation + NOAA severe weather + utility SAIDI)
+    // when the backend answered; otherwise the same heuristic as before so the demo still
+    // works with the backend offline.
+    const recommendBattery = analysis ? analysis.qualified : reason !== 'rate' || (worst?.saidi_minutes ?? 0) >= 600;
+    const squares = buildFourSquare({ plans, kwh, backup, analysis, reason });
     return (
       <Step step={STEP_OF.plan} total={TOTAL} onBack={back}>
         <h1 className="h1">You have two options to power your home with Base.</h1>
@@ -332,7 +428,7 @@ export function NewFunnel({ screen, go, initialZip, utilityParam }: Props) {
             items={[
               'Same fixed rate, no minimum-usage fee',
               `About ${Math.round(backup.essentials)}h of backup for your essentials`,
-              'Switches on automatically when the grid goes down',
+              'Battery subscription + install pricing reviewed during enrollment',
             ]}
             onSelect={() => {
               setChoice('battery');
@@ -343,40 +439,27 @@ export function NewFunnel({ screen, go, initialZip, utilityParam }: Props) {
 
         <div className="decide">
           <div className="eyebrow">Help me decide</div>
-          <div className="h2">What the battery means at your address</div>
+          <div className="h2">What Base means at your address</div>
           <div className="decide__grid">
-            <div>
-              <div className="stat__value stat__value--alert">{Math.round(worstHours)}h</div>
-              <p className="small">
-                average time without power for {utility?.name} customers in {worst?.year}
-                {worst && MAJOR_EVENT_NOTE(worst.year)}.
-              </p>
-            </div>
-            <div>
-              <div className="stat__value">{Math.round(backup.essentials)}h</div>
-              <p className="small">
-                essentials backup from {BATTERY_KWH} kWh at your {kwh.toLocaleString()} kWh/month
-                ({Math.round(backup.wholeHome)}h if you run the whole house).
-              </p>
-            </div>
-            <div>
-              <p className="small" style={{ marginBottom: 6 }}>
-                One multi-day outage without backup:
-              </p>
-              <ul className="cost-list">
-                {OUTAGE_COSTS.map(c => (
-                  <li key={c.label}>
-                    <span>{c.label}</span>
-                    <span>${c.amount}</span>
-                  </li>
-                ))}
-                <li className="total">
-                  <span>Estimated out-of-pocket</span>
-                  <span>${OUTAGE_COST_TOTAL}</span>
-                </li>
-              </ul>
-            </div>
+            {squares.map((s, i) => (
+              <div key={s.id}>
+                <div className={`stat__value ${i === 0 ? 'stat__value--alert' : ''}`}>{s.value}</div>
+                <p className="small">{s.caption}</p>
+              </div>
+            ))}
           </div>
+          <p className="small" style={{ marginTop: 12, color: 'var(--grey-60)' }}>
+            Battery pricing, subscription terms, and install costs are reviewed during enrollment and may vary by home.
+          </p>
+          <details style={{ marginTop: 14 }}>
+            <summary className="small">Why can Base offer a fixed rate below market?</summary>
+            <p className="small" style={{ marginTop: 6 }}>
+              Your battery isn't just backup - it's part of a fleet. Base buys and stores wholesale power when it's
+              cheap (often a few cents/kWh) and draws on it at peak, when wholesale prices spike into the double
+              digits. The more homes in the fleet, the stronger Base's position to lock in that spread - which is
+              what funds your fixed rate, no matter what the grid does.
+            </p>
+          </details>
         </div>
 
         <div className="spacer" />
@@ -392,6 +475,17 @@ export function NewFunnel({ screen, go, initialZip, utilityParam }: Props) {
     return <DeadEnd zip={zip} utility={utility} kwh={kwh} onBack={back} />;
   }
 
+  // ---------- Site survey: install-area/backyard photos + real permitting logistics ----------
+  if (screen === 'survey') {
+    return (
+      <Step step={STEP_OF.survey} total={TOTAL} label="Site survey" onBack={back}>
+        <h1 className="h1">A few photos so we can review your home.</h1>
+        <p className="sub">This helps our team assess your property and decide whether a battery solution makes sense for your home.</p>
+        <SiteSurvey zip={zip} leadId={savedLeadId} />
+      </Step>
+    );
+  }
+
   // ---------- 6. Done ----------
   return (
     <Step step={STEP_OF.done} total={TOTAL} onBack={back}>
@@ -404,10 +498,19 @@ export function NewFunnel({ screen, go, initialZip, utilityParam }: Props) {
           </h1>
           <p className="sub">
             {choice === 'battery'
-              ? `Next we'll schedule a site check at ${zip}. Your battery covers about ${Math.round(backup.essentials)} hours of essentials.`
+              ? `Next, a quick home review at ${zip} so a Base specialist can confirm the fit and reach out with next steps. Your battery covers about ${Math.round(backup.essentials)} hours of essentials.`
               : 'Next we\'ll confirm your address and start your switch.'}
           </p>
-          <button className="btn">Continue to address</button>
+          {choice === 'battery' ? (
+            <>
+              <button className="btn" onClick={() => go('survey')}>
+                Continue to site survey
+              </button>
+              {savedLeadId && <ResumeLink leadId={savedLeadId} zip={zip} />}
+            </>
+          ) : (
+            <button className="btn">Continue to address</button>
+          )}
         </div>
         <div className={`hero-art ${choice === 'battery' ? 'plan__art--battery' : ''}`}>
           <div className="hero-art__badge">
@@ -421,10 +524,114 @@ export function NewFunnel({ screen, go, initialZip, utilityParam }: Props) {
   );
 }
 
-const MAJOR_EVENT_NOTE = (year: number) =>
-  ({ 2021: ', the year of Winter Storm Uri', 2023: ', the year of Winter Storm Mara', 2024: ', the year of Hurricane Beryl' })[
-    year
-  ] ?? '';
+/** Shows the resumable link for a saved lead, so the customer can finish the site
+ * survey later instead of right now - the actual "known state to return to". */
+function ResumeLink({ leadId, zip }: { leadId: string; zip: string }) {
+  const [copied, setCopied] = useState(false);
+  const url = `${window.location.origin}${window.location.pathname}?postal_code=${zip}&lead=${leadId}#/after/survey`;
+
+  return (
+    <div className="small" style={{ marginTop: 12, color: 'var(--grey-60)' }}>
+      Not ready for photos right now?{' '}
+      <button
+        className="link-btn"
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(url);
+          } catch {
+            // clipboard API can be unavailable (e.g. non-HTTPS); the link is still shown below
+          }
+          setCopied(true);
+        }}
+      >
+        {copied ? 'Link copied ✓' : 'Copy a link to finish later'}
+      </button>
+    </div>
+  );
+}
+
+/** Dollar estimate for /stage2/analyze's average_bill input when we don't have a real
+ * bill amount from OCR yet - Base's own price at this usage, else the market median. */
+function estimateMonthlyBill(plans: Plan[], kwh: number): number {
+  const base = plans.find(p => p.company === 'Base Power');
+  if (base) return monthlyBill(base, kwh);
+  const market = plans.filter(p => p.company !== 'Base Power' && !p.prepaid);
+  if (market.length) return median(market.map(p => priceAt(p, kwh))) * kwh;
+  return kwh * 0.14; // rough TX average before plans load
+}
+
+interface Square {
+  id: 'rate' | 'backup' | 'outage_cost' | 'certainty';
+  value: string;
+  caption: string;
+}
+
+/**
+ * Automotive four-square instinct: compute all four numbers, then lead with whichever
+ * one actually closes this customer instead of a fixed "our best stat first" order.
+ * There's no ROI/payback square - the battery is bundled into the subscription, never
+ * purchased, so a payback period doesn't exist for this product.
+ */
+function buildFourSquare({
+  plans,
+  kwh,
+  backup,
+  analysis,
+  reason,
+}: {
+  plans: Plan[];
+  kwh: number;
+  backup: { essentials: number; wholeHome: number };
+  analysis: StageTwoAnalysis | null;
+  reason: Reason | null;
+}): Square[] {
+  const base = plans.find(p => p.company === 'Base Power');
+  const market = plans.filter(p => p.company !== 'Base Power' && !p.prepaid);
+  const rateSavings =
+    base && market.length ? median(market.map(p => priceAt(p, kwh))) * kwh - monthlyBill(base, kwh) : null;
+
+  const outageAnnual = analysis?.outage_protection_value_annual ?? OUTAGE_COST_TOTAL;
+  const riskScore = analysis?.risk_score ?? null;
+  const riskTier = analysis?.risk_tier ?? null;
+
+  const squares: Record<Square['id'], Square> = {
+    rate: {
+      id: 'rate',
+      value: rateSavings != null && rateSavings > 0 ? `$${Math.round(rateSavings)}/mo` : 'Below market',
+      caption: 'lower than the median plan at your usage, locked in - no minimum-usage fee',
+    },
+    backup: {
+      id: 'backup',
+      value: `${Math.round(backup.essentials)}h`,
+      caption: `of essentials backup from a ${BATTERY_KWH} kWh battery included with the Base plan`,
+    },
+    outage_cost: {
+      id: 'outage_cost',
+      value: `$${Math.round(outageAnnual)}/yr`,
+      caption: 'in outage costs (spoiled food, hotels, eating out) a battery typically avoids at your address',
+    },
+    certainty: {
+      id: 'certainty',
+      value: riskTier ?? 'Fixed rate',
+      caption: riskScore != null
+        ? `weather + grid risk here (${Math.round(riskScore)}/100) - your rate stays fixed no matter what wholesale prices do`
+        : 'Your rate stays fixed no matter what wholesale power prices do',
+    },
+  };
+
+  const order: Square['id'][] =
+    reason === 'rate'
+      ? ['rate', 'certainty', 'outage_cost', 'backup']
+      : riskTier === 'SEVERE' || riskTier === 'HIGH'
+        ? ['outage_cost', 'backup', 'certainty', 'rate']
+        : reason === 'backup'
+          ? ['backup', 'outage_cost', 'certainty', 'rate']
+          : rateSavings && rateSavings > 15
+            ? ['rate', 'outage_cost', 'backup', 'certainty']
+            : ['backup', 'outage_cost', 'rate', 'certainty'];
+
+  return order.map(id => squares[id]);
+}
 
 // ---------- Pieces ----------
 
