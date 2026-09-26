@@ -1,90 +1,124 @@
-# ResilianceROI - Intelligent Battery Lead Qualifier
+# ResilianceROI — Intelligent Battery Lead Qualifier
 
-A **two-stage lead qualification funnel** that educates users about real outage risk in their area, then qualifies battery investments based on ROI and grid risk.
+A lead-qualification funnel for Base Power (whole-home battery, sold as a subscription
+add-on to their fixed-rate energy plan) that replaces generic screening questions with
+real, address-specific severe-weather/grid-risk data — then carries that same qualified
+lead through photo-based site survey, AR-style battery placement, permitting lookup, and
+scheduling, instead of dropping it at "email us."
 
-## The Problem
+## The problem
 
-Base Power's current lead gen asks generic questions ("Do you have a generator?") that don't qualify anyone. This results in:
-- Low-quality leads sent to CRM
-- High cost per actual sale
-- Wasted sales time on non-viable deals
+Base's live funnel asks questions that don't qualify anyone ("what's your main reason
+for considering Base?"), asks the same thing twice in different words (provider choice),
+and dead-ends customers who already own a battery with a manual mailto link. See
+`frontend/src/before/CurrentFunnel.tsx` for a faithful reproduction, and `/compare` in
+the running app for a side-by-side against what we built.
 
-## The Solution
+## What we built
 
-**Two-stage funnel with real data:**
+**Real data, not hype.** A per-ZIP severe-weather/grid-risk index built from:
+- **ERCOT** Unplanned Resource Outages Report — 364 daily zip reports, deduped to
+  unique outages, correlated against weather-event days to learn how much each event
+  *type* actually moves forced-outage MW (`backend/weather_outage_correlation.py`)
+- **NOAA Storm Events Database** — real severe-weather events by Texas county/zone,
+  2021–2026 (spans Winter Storm Uri) (`backend/noaa_storm_events_processor.py`)
+- **EIA-861** utility SAIDI/SAIFI reliability filings, as a systemwide reliability
+  baseline per TDU
+- Census ZCTA↔county crosswalk to join ZIP-level customers to county-level weather data
 
-1. **Stage 1: Risk Awareness** (ZIP code only)
-   - Show historical severe weather events in their area (NOAA data)
-   - Show outage patterns from ERCOT grid data
-   - Personalized message: "Here's what actually happens here"
-   - Decision: "Does this concern you?" (friction + self-qualification)
+These combine into `zip_risk_index.csv` (a 0–100 `risk_score` and tier per ZIP) via
+`backend/prediction_index.py`, which the funnel shows the customer directly — including
+a full "how we calculated this" breakdown per ZIP (`/methodology/<zip_code>`), not just
+a black-box number.
 
-2. **Stage 2: Full Analysis** (Only if Stage 1 shows real risk)
-   - Collect: monthly kWh usage, bill amount, home size
-   - Calculate: ROI payback period, monthly savings
-   - Decision: "Battery makes financial sense?" (real qualification)
+**No ROI/payback math.** The battery is bundled into Base's subscription and never
+purchased outright, so there's no customer capex to pay back. Instead we use a
+four-square-style value framing (rate savings vs. market, backup hours at their usage,
+outage cost avoided, rate certainty) — see `_qualify()` in `backend/main.py` and
+`buildFourSquare()` in `frontend/src/after/NewFunnel.tsx`.
 
-**Result:** Only ~15-20% of leads proceed to Stage 2, and ~50-70% of those qualify for sales.
+**Resumable leads.** A completed lead gets a durable id and link (`backend/leads_db.py`,
+SQLite) so a customer can leave after picking a plan and come back later to finish site
+survey and scheduling, instead of losing all progress to React state.
 
----
+**Site survey + AR-style placement.** After lead creation: photo upload (validated with
+Pillow), a real municipal permitting lookup by city (`backend/municipal_permitting.py`,
+sourced fire-code/NEC/permitting-center citations for Dallas/Arlington/Houston/Austin),
+and "see it in your space" battery placement over the customer's own photo. Placement
+uses a **local** vision model (Ollama + Qwen2.5-VL, no API key, no cloud dependency —
+`backend/install_visualizer.py`) to suggest a bounding box, corrected to the battery's
+real aspect ratio (30.68"W × 35.9"H × 22"D) and rendered as a draggable/resizable layer
+in the browser (`frontend/src/components/PlacementCanvas.tsx`), not a server-flattened
+image.
+
+**Scheduling.** Once survey is complete, the customer can request a sales follow-up with
+a specific window (`/follow-up-windows`, `/leads/<id>/follow-up-request`).
 
 ## Architecture
 
-### Backend
-- **ercot_processor.py**: Parses ERCOT grid data → calculates zone risk scores
-- **noaa_daily_processor.py**: Parses NOAA weather CSVs → identifies severe weather patterns
-- **main.py**: FastAPI endpoints for `/stage1/risk-awareness` and `/stage2/analyze`
+### Backend (Flask, not FastAPI)
 
-### Frontend
-- React form with state machine: `zip` → `risk-awareness` → `details` → `results`
-- Shows real data at each stage (no fluff)
-- Clear CTAs for "Yes, I'm concerned" vs "Not for me"
+Run with `python main.py` — a plain WSGI Flask app (`app.run(...)`), not an ASGI app,
+so `uvicorn` does not apply here.
+
+| Module | Responsibility |
+|---|---|
+| `main.py` | Flask app + all routes; loads pre-built CSVs at startup |
+| `prediction_index.py` | Builds `zip_risk_index.csv` / `zip_risk_breakdown.csv` (batch script, not run per-request) |
+| `weather_outage_correlation.py` | Weather-type → ERCOT outage sensitivity, empirical-Bayes shrinkage |
+| `noaa_storm_events_processor.py` | Loads/normalizes NOAA Storm Events (county + zone types) |
+| `aggregate_ercot.py` | Parses the 364 daily ERCOT outage zips into one deduped CSV |
+| `zip_county_mapper.py` / `zip_utility_mapper.py` | ZIP→county, city→utility lookups |
+| `leads_db.py` | SQLite lead persistence (resumable state) |
+| `install_visualizer.py` | Ollama/Qwen2.5-VL battery-placement suggestion |
+| `municipal_permitting.py` | Sourced per-city permitting requirements |
+| `bill_analyzer.py` | OCR power-bill upload → instant usage/bill extraction |
+
+All file paths in `main.py`/`leads_db.py` are anchored to the script's own directory
+(`BACKEND_DIR = Path(__file__).resolve().parent`), so the backend can be launched from
+any working directory — the repo root, `backend/`, or an IDE run button — without
+silently falling back to default data.
+
+### Frontend (React + Vite + TypeScript)
+
+Hash-based routing (no React Router). `frontend/src/after/NewFunnel.tsx` is the new
+funnel; `frontend/src/before/CurrentFunnel.tsx` is the faithful "what Base has today"
+reproduction; `frontend/src/compare/Compare.tsx` renders both side by side.
 
 ---
 
 ## Setup
 
-### 1. Backend Installation
+### 1. Backend
 
 ```bash
 cd backend
 pip install -r requirements.txt
+python main.py
 ```
 
-### 2. Download NOAA Weather Data
+Check: `http://localhost:8000/health` and `http://localhost:8000/data-status`
 
-Go to: **https://www.ncei.noaa.gov/cdo-web/**
-
-1. Click **Daily Summaries** dataset
-2. Search for Texas weather stations (Houston, Dallas, Austin, San Antonio, etc.)
-3. Date range: last 5+ years
-4. Output format: **Custom GHCN-Daily CSV**
-5. Data types: Select `PRCP`, `SNOW`, `SNWD`, `WESD`, `WESF` (precipitation, snow, weather severity)
-6. Add custom flags: **Station Name, Geographic Location**
-7. Download and save to: `backend/noaa_data/daily_summaries.csv`
-
-**File will be ~2-5MB with weather data for multiple stations.**
-
-### 3. Download ERCOT Data (Optional)
-
-For full grid risk analysis (currently uses defaults):
-
-- Unplanned Resource Outages Report
-- Actual System Load by Study Area
-- Short-Term System Adequacy Report
-
-Save to `backend/ercot_data/`
-
-### 4. Start Backend
+The risk index (`zip_risk_index.csv` and friends) ships pre-built in the repo. To
+regenerate it after refreshing `ercot_data/` or the NOAA storm-events files:
 
 ```bash
 cd backend
-python -m uvicorn main:app --reload --port 8000
+python aggregate_ercot.py        # rebuild the deduped ERCOT outage CSV
+python prediction_index.py       # rebuild zip_risk_index.csv / zip_risk_breakdown.csv
 ```
 
-Check: `http://localhost:8000/data-status`
+### 2. (Optional) Local vision model for site-survey placement
 
-### 5. Start Frontend
+```bash
+winget install Ollama.Ollama
+ollama pull qwen2.5vl:7b
+```
+
+If Ollama isn't running, `/visualize-install` falls back to a default placement box
+instead of failing.
+
+### 3. Frontend
 
 ```bash
 cd frontend
@@ -92,203 +126,98 @@ npm install
 npm run dev
 ```
 
-Open: `http://localhost:3000`
+Open the URL Vite prints (defaults to `http://localhost:5173` or `3000`/`3002`
+depending on port availability).
 
 ---
 
-## API Endpoints
+## API endpoints
 
-### Stage 1: Risk Awareness
+| Route | Method | Purpose |
+|---|---|---|
+| `/stage1/risk-awareness` | POST | Real weather/outage risk summary for a ZIP |
+| `/methodology/<zip_code>` | GET | Full "how we calculated this" breakdown |
+| `/stage2/analyze` | POST | Qualification + outage-protection value (no ROI/payback) |
+| `/analyze-power-bill` | POST | OCR a power-bill photo, then qualify from extracted usage |
+| `/leads` | POST | Create a resumable lead |
+| `/leads/<lead_id>` | GET | Fetch a lead by id |
+| `/site-survey` | POST | Upload site-survey photos |
+| `/visualize-install` | POST | Suggested battery placement box over a customer photo |
+| `/assets/battery-product.png` | GET | Battery product image asset |
+| `/permitting/<zip_code>` | GET | Municipal permitting requirements for that city |
+| `/follow-up-windows` | GET | Available scheduling windows |
+| `/leads/<lead_id>/follow-up-request` | POST | Request a sales follow-up (requires name/phone/email) |
+| `/health` | GET | Liveness check |
+| `/data-status` | GET | Risk index load status (`risk_index_loaded`, `zips_covered`, `zones_covered`) |
 
-**POST** `/stage1/risk-awareness`
-
-Request:
-```json
-{
-  "zip_code": "77001"
-}
-```
-
-Response:
-```json
-{
-  "zip_code": "77001",
-  "zone": "SOUTH",
-  "weather_risk_summary": "Houston experiences severe weather regularly: 12 events in 5 years (~2.4/year)...",
-  "severe_weather_events_5yr": 12,
-  "most_common_event_type": "TROPICAL_STORM",
-  "avg_events_per_year": 2.4,
-  "should_proceed_to_analysis": true,
-  "personalized_message": "You've had 12 significant weather events recently. While not extremely common, they could be costly. Let's see if a battery makes sense."
-}
-```
-
-### Stage 2: Full Analysis
-
-**POST** `/stage2/analyze`
+### Example: `/stage2/analyze`
 
 Request:
 ```json
-{
-  "zip_code": "77001",
-  "monthly_kwh": 900,
-  "average_bill": 120,
-  "home_size_sqft": 2000
-}
+{ "zip_code": "77001", "monthly_kwh": 900, "average_bill": 120 }
 ```
 
 Response:
 ```json
 {
   "qualified": true,
+  "zip_code": "77001",
   "risk_score": 52.5,
+  "risk_tier": "MODERATE",
   "estimated_outage_hours_per_year": 18.5,
-  "roi_years": 7.2,
-  "monthly_savings": 45.50,
   "recommended_capacity_kwh": 30,
+  "outage_protection_value_monthly": 45.5,
+  "outage_protection_value_annual": 546.0,
   "confidence": 0.85,
-  "qualification_reason": "Strong ROI (7.2 yrs) + significant outage risk. Battery investment justified.",
-  "next_steps": "✓ You qualify! A 30kWh system would pay for itself in 7.2 years. Connect with a Base Power specialist for a custom quote."
+  "qualification_reason": "Meaningful outage risk in your area (52/100). A battery adds real protection, bundled into your plan at no extra upfront cost.",
+  "next_steps": "[OK] You qualify! A 30kWh battery is included in your Base subscription at no upfront cost. Connect with a Base Power specialist for a custom quote."
 }
 ```
 
 ---
 
-## Data Flow
+## Qualification logic
 
-```
-User enters ZIP
-    ↓
-[NOAA processor] → Finds severe weather events in past 5 years
-[ERCOT processor] → Calculates grid risk score for zone
-    ↓
-Display: "Your area had X storms/outages, costing ~$Y average"
-    ↓
-Decision: "Does this concern you?"
-    ├─ NO → Exit (low-quality lead avoided)
-    └─ YES → Proceed to Stage 2
-         ↓
-    User enters: kWh usage, bill amount, home size
-         ↓
-    Calculate: Battery size, ROI payback period, monthly savings
-         ↓
-    Decision: "Qualifies?" (ROI < 12 yrs + Risk > 30)
-         ├─ NO → "Monitor for changes" (nurture)
-         └─ YES → "You qualify! Connect with specialist" (sales)
-```
+Qualification is risk-based, not ROI-based (there's no capex to pay back):
 
----
-
-## Qualification Thresholds
-
-**Leads qualify if:**
-- Outage risk score > 30 (moderate+), **AND**
-- (ROI payback < 12 years **OR** monthly savings > $25)
-
-**Lead tiers:**
-
-| Metric | Tier | Action |
-|--------|------|--------|
-| Risk >60, ROI <7yr | Tier 1 | Immediate sales outreach |
-| Risk 40-60, ROI 7-10yr | Tier 2 | Sales nurture sequence |
-| Risk 30-40, ROI 10-12yr | Tier 3 | Educational content |
-| Risk <30 OR ROI >12yr | Tier 4 | Monitor (watch for storms) |
-
----
-
-## Key Features
-
-✅ **Real Data**: NOAA weather + ERCOT grid data (not hype)  
-✅ **Transparent Logic**: Users understand exactly why they qualify/don't  
-✅ **Friction**: Creates pause for self-reflection ("Is this really my problem?")  
-✅ **Locus of Control**: User decides → higher engagement  
-✅ **Educational**: Teaches users about outage patterns in their area  
-✅ **Efficient**: Filters low-quality leads before CRM  
-
----
-
-## Tuning
-
-### Qualification Thresholds
-
-Edit `backend/main.py` line ~115:
 ```python
-min_risk = 30  # Lower = more leads
-max_roi = 12   # Higher = more leads
-min_monthly_savings = 25
+# backend/main.py
+MIN_QUALIFYING_RISK_SCORE = 30
+qualified = risk_score > MIN_QUALIFYING_RISK_SCORE
 ```
 
-### Risk Calculation
+`outage_protection_value_monthly` (see `calculate_outage_protection_value()` in
+`main.py`) is an insurance-style estimate — what an outage of that length would cost at
+that address's bill size — not a return on an investment. The rate-savings side of the
+four-square pitch is priced against live PowerToChoose plan data, which only the
+frontend loads (`frontend/src/lib/data.ts`), so it isn't duplicated on the backend.
 
-NOAA events weighted by severity:
-- Heavy rain (>1.5") = 3 points
-- Heavy snow (>2") = 3-4 points
-- Weather event with duration = 1-2 points
-
-Adjust in `noaa_daily_processor.py`: `_calculate_severity()`
-
-### Cost Assumptions
-
-Current: $500/kWh installed cost  
-Adjust in `backend/main.py`: `calculate_roi_years()`
+To change the qualification bar, edit `MIN_QUALIFYING_RISK_SCORE` in `backend/main.py`.
 
 ---
 
 ## Testing
 
-### With Sample Data
-
+Backend:
 ```bash
-# Terminal 1: Backend
-cd backend && python -m uvicorn main:app --reload --port 8000
-
-# Terminal 2: Frontend
-cd frontend && npm run dev
-```
-
-**Test ZIP codes by risk:**
-- **High risk**: 77001 (Houston), 75201 (Dallas) → Most should qualify
-- **Medium risk**: 78701 (Austin) → Some qualify
-- **Low risk**: 79936 (El Paso) → Few qualify
-
-### Verify Data Loading
-
-```bash
+cd backend && python main.py
 curl http://localhost:8000/data-status
 ```
 
-Should show:
-```json
-{
-  "noaa_data_loaded": true,
-  "noaa_zones_available": 1,
-  "ercot_ready": true
-}
+Frontend (Vitest + React Testing Library, one suite per funnel screen):
+```bash
+cd frontend
+npm test
 ```
 
----
-
-## Next Steps for Hackathon
-
-1. ✅ Download NOAA Daily Summaries for 3-4 Texas cities
-2. ✅ Test with high-risk zip codes (Houston, Dallas)
-3. ⬜ Collect A/B test data on "proceed to Stage 2" conversion rate
-4. ⬜ Tune qualification thresholds based on sales feedback
-5. ⬜ Add credit score / financing check (Stage 2.5)
-6. ⬜ Integrate with Base Power CRM (send qualified leads)
+**Test ZIP codes:** 77001 (Houston), 75201 (Dallas), 78701 (Austin) are all inside the
+built risk index; other Texas ZIPs fall back to their ERCOT zone average.
 
 ---
 
-## FAQ
+## Also in this repo
 
-**Q: Why only ZIP code in Stage 1?**  
-A: Minimizes friction. We show them real data about THEIR area—no personal data needed yet.
-
-**Q: What if they're in an area with no NOAA station?**  
-A: Falls back to conservative default (doesn't exclude them, just less data).
-
-**Q: Can I change the qualification thresholds?**  
-A: Yes! Edit `backend/main.py`. Run A/B tests to optimize for your sales conversion rate.
-
-**Q: How do I add more features (solar potential, financing, etc.)?**  
-A: Add as Stage 2.5 (after risk awareness, before final recommendation). Keeps friction low.
+`housepowerbackup.com` is a separate, live, publicly deployed site (not part of this
+funnel) — a ZIP-driven neutral comparison engine for standby generators, solar+battery,
+and portable generators, citing EIA/NOAA/DOE data. It doesn't currently feature Base;
+see `docs/hackathon-pitch-script.md` for how it fits the pitch.

@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-DB_PATH = Path("./leads.db")
+DB_PATH = Path(__file__).resolve().parent / "leads.db"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS leads (
