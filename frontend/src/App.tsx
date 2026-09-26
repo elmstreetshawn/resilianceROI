@@ -35,16 +35,16 @@ export default function App() {
 
   let body;
   if (section === 'before') {
-    const s = (BEFORE_SCREENS as readonly string[]).includes(screen) ? (screen as BeforeScreen) : 'reason';
+    const s = (BEFORE_SCREENS as readonly string[]).includes(screen) ? (screen as BeforeScreen) : 'utility';
     body = (
       <div className="page page--narrow">
         {!embedded && (
           <p className="small" style={{ color: 'var(--grey-60)', marginBottom: 12 }}>
-            This reproduces 4 specific screens (2, 4, 7 &amp; 10) from Base's real 10-step funnel - the ones our
-            redesign changes. It's not the full funnel, so the step count starts at 2, not 1.
+            This reproduces 5 specific screens from Base's real funnel - the homepage utility question for a split
+            ZIP, then funnel steps 2, 4, 7 &amp; 10 - the ones our redesign changes. It's not the full funnel.
           </p>
         )}
-        <CurrentFunnel screen={s} go={next => navigate(`before/${next}`)} />
+        <CurrentFunnel screen={s} go={next => navigate(`before/${next}`)} zip={zip} />
       </div>
     );
   } else if (section === 'after') {
@@ -74,7 +74,7 @@ export default function App() {
           <a href="#/compare" className={section === 'compare' ? 'on' : ''}>
             Before / after
           </a>
-          <a href="#/before/reason" className={section === 'before' ? 'on' : ''}>
+          <a href="#/before/utility" className={section === 'before' ? 'on' : ''}>
             Current funnel
           </a>
           <a href="#/after/zip" className={section === 'after' ? 'on' : ''}>

@@ -5,13 +5,23 @@ import { useState } from 'react';
 
 const PAIRS = [
   {
+    id: 'utility',
+    title: 'Utility',
+    before: 'utility',
+    after: 'zip',
+    notes: [
+      'For a split ZIP, the homepage asks "Who\'s your local utility?" using the names of wire companies most customers have never seen. The fallback is to dig through your bill or email.',
+      'One question, only for split ZIPs, in words people know: who sends your electric bill? It settles retail choice too, so nothing is asked twice.',
+    ],
+  },
+  {
     id: 'provider',
-    title: 'Utility & provider',
+    title: 'Provider (asked again)',
     before: 'provider',
     after: 'zip',
     notes: [
-      'Base already has ?utility=ONCOR in the URL, yet asks the customer to self-report.',
-      '"I\'m not sure" is a dead-weight answer. We detect utility and retail choice from the ZIP instead.',
+      'Step 4 asks again, in different words, something the utility already settled. Answer "assigned" from Oncor territory and you land on the waitlist, a lost customer.',
+      'This step doesn\'t exist. The ZIP, or the one bill question, already answered it.',
     ],
   },
   {
@@ -90,7 +100,7 @@ export function Compare({ search }: { search: string }) {
       <div className="compare-cols">
         <div>
           <div className="compare-col__head">
-            <span className="chip chip--neutral">Today: join.basepowercompany.com</span>
+            <span className="chip chip--neutral">Today: basepowercompany.com</span>
           </div>
           <iframe key={`b-${pair.id}`} className="compare-frame" src={src('before', pair.before)} title="Current funnel" />
           <ul className="compare-note">

@@ -10,11 +10,12 @@ function Harness({ initialScreen = 'reason' as BeforeScreen }) {
 }
 
 describe('CurrentFunnel', () => {
-  it('the four screens are numbered 2, 4, 7, 10 of Base\'s real 10-step funnel, by design', () => {
+  it('reproduces the homepage utility question plus funnel steps 2, 4, 7, 10, by design', () => {
     // This is a documentation test, not a bug guard: the app-level context note
     // (App.tsx) is what tells a viewer this is intentional curation, not a broken
     // reproduction that skips step 1. See App.test.tsx for that note's presence.
-    expect(BEFORE_SCREENS).toEqual(['reason', 'provider', 'plan', 'deadend']);
+    // 'utility' is the homepage's split-ZIP question, shown before the funnel's steps.
+    expect(BEFORE_SCREENS).toEqual(['utility', 'reason', 'provider', 'plan', 'deadend']);
     render(<Harness initialScreen="reason" />);
     expect(screen.getByText('Step 2 of 10')).toBeInTheDocument();
   });

@@ -25,26 +25,26 @@ describe('App routing', () => {
   it('defaults to the compare view with no hash', () => {
     setRoute('');
     render(<App />);
-    expect(screen.getByText(/rebuilt to sell the battery/i)).toBeInTheDocument();
+    expect(screen.getByText("Base's signup funnel")).toBeInTheDocument();
   });
 
   describe('the "before" (current funnel) section', () => {
     it('shows a context note explaining the curated step numbers, not embedded', () => {
       setRoute('#/before/reason');
       render(<App />);
-      expect(screen.getByText(/reproduces 4 specific screens/i)).toBeInTheDocument();
+      expect(screen.getByText(/reproduces 5 specific screens/i)).toBeInTheDocument();
     });
 
     it('hides the context note when embedded (used inside Compare\'s iframes)', () => {
       setRoute('#/before/reason', '?embed=1');
       render(<App />);
-      expect(screen.queryByText(/reproduces 4 specific screens/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/reproduces 5 specific screens/i)).not.toBeInTheDocument();
     });
 
-    it('falls back to the reason screen for an unknown before-screen', () => {
+    it('falls back to the homepage utility screen for an unknown before-screen', () => {
       setRoute('#/before/nonsense');
       render(<App />);
-      expect(screen.getByText('Step 2 of 10')).toBeInTheDocument();
+      expect(screen.getByText("Who's your local utility?")).toBeInTheDocument();
     });
   });
 
@@ -68,8 +68,8 @@ describe('Compare view', () => {
 
   it('has a tab for every comparison pair, defaulting to the first', () => {
     render(<App />);
-    const tabs = ['Utility & provider', 'Why Base?', 'Compare the market', 'Pick a plan', 'Already have a battery'];
+    const tabs = ['Utility', 'Provider (asked again)', 'Why Base?', 'Compare the market', 'Pick a plan', 'Already have a battery'];
     for (const t of tabs) expect(screen.getByText(t)).toBeInTheDocument();
-    expect(screen.getByText('Utility & provider')).toHaveClass('compare-tab--on');
+    expect(screen.getByText('Utility')).toHaveClass('compare-tab--on');
   });
 });

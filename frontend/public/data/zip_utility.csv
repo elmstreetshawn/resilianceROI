@@ -1,5 +1,6 @@
 zip,city,utility
 78660,Pflugerville,ONCOR
+78660,Pflugerville,AUSTIN_ENERGY
 75201,Dallas,ONCOR
 76102,Fort Worth,ONCOR
 78664,Round Rock,ONCOR
@@ -9,7 +10,7 @@ zip,city,utility
 78401,Corpus Christi,AEP_CENTRAL
 78501,McAllen,AEP_CENTRAL
 79601,Abilene,AEP_NORTH
-77550,Galveston,TNMP
+77590,Texas City,TNMP
 79401,Lubbock,LPL
 78701,Austin,AUSTIN_ENERGY
 78205,San Antonio,CPS

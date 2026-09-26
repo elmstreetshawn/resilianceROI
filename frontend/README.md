@@ -19,8 +19,9 @@ npm run dev          # http://localhost:3000
 | `#/after/<zip\|risk\|usage\|compare\|plan\|done\|deadend>` | Our funnel |
 
 Query params mirror Base's funnel: `?postal_code=77096&utility=CENTERPOINT`.
-Good demo ZIPs: **77096** (CenterPoint, 72 h outage year), **78660** (Oncor),
-**77550** (TNMP), **78701** (Austin Energy, no retail choice).
+Good demo ZIPs: **78660** (Pflugerville, split between Oncor and Austin Energy, so it
+shows the one bill question), **77096** (Houston, CenterPoint, the 72 h outage year),
+**77590** (Texas City, TNMP), **78701** (Austin Energy, no retail choice).
 
 The backend is optional. If `VITE_API_URL` (default `http://localhost:8000`) is
 reachable, step 2 adds NOAA severe-weather history from `backend/main.py`. Without it,
@@ -42,7 +43,7 @@ everything runs from static CSVs.
 |------|--------|-------|
 | `utility_reliability.csv` | [EIA-861](https://www.eia.gov/electricity/data/eia861/) Reliability tables, 2021–2024 | SAIDI (minutes without power per customer per year) including major events. IEEE 1366 figures where reported; Oncor and TNMP only file under "Other Standard" |
 | `plans.csv` | [PowerToChoose.org](https://www.powertochoose.org) CSV export (`/en-us/Plan/ExportToCsv`) | English offers plus Base's own listing. Prices are EFL averages at 500/1000/2000 kWh, including delivery; the app interpolates between them |
-| `zip_utility.csv` | Hand-built demo table | 14 ZIPs. The `utility` URL param overrides it, as in Base's funnel |
+| `zip_utility.csv` | Demo table, checked against Base's own ZIP router (`account.basepowercompany.com/api/zip-router`) on 2026-09-26 | One row per utility, so split ZIPs have two rows. The `utility` URL param overrides it, as in Base's funnel |
 
 Both public sources need no credentials. To refresh:
 `pip install pandas openpyxl && python data/build_frontend_data.py`

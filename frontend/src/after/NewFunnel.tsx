@@ -61,6 +61,8 @@ export function NewFunnel({ screen, go, initialZip, utilityParam, leadId }: Prop
   const [zipInput, setZipInput] = useState(initialZip);
   const [zip, setZip] = useState(initialZip);
   const [utility, setUtility] = useState<UtilityInfo | null>(null);
+  // More than one entry = split ZIP; the customer answers one plain-language question
+  const [utilityOptions, setUtilityOptions] = useState<UtilityInfo[]>([]);
   const [city, setCity] = useState<string | null>(null);
   const [lookupDone, setLookupDone] = useState(false);
   const [reliability, setReliability] = useState<Reliability[]>([]);
@@ -129,27 +131,39 @@ export function NewFunnel({ screen, go, initialZip, utilityParam, leadId }: Prop
     setLookupDone(false);
     (async () => {
       // A URL utility only applies to the ZIP it came with
-      const { info, city } = await resolveUtility(zip, zip === initialZip ? utilityParam : null);
+      const { info, options = [], city } = await resolveUtility(zip, zip === initialZip ? utilityParam : null);
       if (!live) return;
-      setUtility(info);
+      // Deep links past step 1 on a split ZIP fall back to the retail-choice utility
+      setUtility(info ?? (screen !== 'zip' ? options.find(o => o.choice) ?? options[0] ?? null : null));
+      setUtilityOptions(info ? [] : options);
       setCity(city);
       setLookupDone(true);
-      if (info) {
-        const [rel, pl] = await Promise.all([reliabilityFor(info.code), plansFor(info.code)]);
-        if (!live) return;
-        setReliability(rel);
-        setPlans(pl);
-      } else {
-        setReliability([]);
-        setPlans([]);
-      }
       const w = await fetchWeatherRisk(zip);
       if (live) setWeather(w);
     })();
     return () => {
       live = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zip, initialZip, utilityParam]);
+
+  // Utility-specific data loads once the utility is known (directly, or from the split-ZIP answer)
+  useEffect(() => {
+    let live = true;
+    if (!utility) {
+      setReliability([]);
+      setPlans([]);
+      return;
+    }
+    Promise.all([reliabilityFor(utility.code), plansFor(utility.code)]).then(([rel, pl]) => {
+      if (!live) return;
+      setReliability(rel);
+      setPlans(pl);
+    });
+    return () => {
+      live = false;
+    };
+  }, [utility]);
 
   // Real ROI/qualification math (backend/main.py's /stage2/analyze: risk score from
   // ERCOT outage correlation + NOAA severe weather + utility SAIDI, payback years,
@@ -211,31 +225,40 @@ export function NewFunnel({ screen, go, initialZip, utilityParam, leadId }: Prop
           </button>
         </form>
         <div className="spacer" />
+        {lookupDone && utilityOptions.length > 1 && <SplitZipQuestion options={utilityOptions} city={city} selected={utility} onPick={setUtility} />}
         {lookupDone && utility && (
-          <div className="detect">
+          <div className="detect" style={utilityOptions.length > 1 ? { marginTop: 12 } : undefined}>
             <span className="detect__icon">✓</span>
             <div>
-              <div className="h2" style={{ marginBottom: 2 }}>
-                {utility.name} delivers your power{city ? ` in ${city}` : ''}.
-              </div>
               {utility.choice ? (
-                <p className="small">
-                  Your area is deregulated, so <strong>you can choose your electricity provider</strong>. No need to
-                  ask: we worked it out from your ZIP.
-                </p>
+                <>
+                  <div className="h2" style={{ marginBottom: 2 }}>
+                    You can choose your electricity provider{city ? ` in ${city}` : ''}.
+                  </div>
+                  <p className="small">
+                    {utility.name} maintains the lines, and you pick who sells you power.{' '}
+                    {utilityOptions.length > 1 ? 'That answer settles it; ' : 'We worked it out from your ZIP; '}
+                    there's nothing else to ask.
+                  </p>
+                </>
               ) : (
-                <p className="small">
-                  {utility.name} is a city utility or co-op, so your electricity provider is assigned. We'll show you
-                  what Base can still do for your home.
-                </p>
+                <>
+                  <div className="h2" style={{ marginBottom: 2 }}>
+                    {utility.name} is your electricity provider{city ? ` in ${city}` : ''}.
+                  </div>
+                  <p className="small">
+                    It's a city utility or co-op, so the provider is assigned. We'll show you what Base can do for your
+                    home.
+                  </p>
+                </>
               )}
             </div>
           </div>
         )}
-        {lookupDone && !utility && (
+        {lookupDone && !utility && utilityOptions.length === 0 && (
           <div className="callout callout--warn">
-            We don't have ZIP {zip} mapped yet. Try 78660 (Oncor), 77096 (CenterPoint), 77550 (TNMP) or 78701
-            (Austin Energy).
+            We don't have ZIP {zip} mapped yet. Try 78660 (Pflugerville), 77096 (Houston), 77590 (Texas City) or
+            78701 (Austin).
           </div>
         )}
         <div className="spacer" />
@@ -253,11 +276,12 @@ export function NewFunnel({ screen, go, initialZip, utilityParam, leadId }: Prop
         <div className="eyebrow">Your grid, by the numbers</div>
         <h1 className="h1">
           {worst && worst.saidi_minutes >= 600
-            ? `In ${worst.year}, ${utility?.name} customers averaged ${Math.round(worst.saidi_minutes / 60)} hours without power.`
-            : `Here's how often ${utility?.name ?? 'your utility'} loses power.`}
+            ? `In ${worst.year}, homes on your grid averaged ${Math.round(worst.saidi_minutes / 60)} hours without power.`
+            : `Here's how often the power goes out where you live.`}
         </h1>
         <p className="sub">
-          Average hours each {utility?.name} customer spent in the dark, per year, from U.S. EIA-861 utility
+          Average hours each customer of {utility?.name}, the company that runs your lines, spent in the dark, per
+          year, from U.S. EIA-861 utility
           reliability filings.{' '}
           {worst && backup.essentials >= worst.saidi_minutes / 60 && (
             <strong>A Base battery would have kept your essentials running through every hour of it.</strong>
@@ -718,7 +742,7 @@ function ComparePlans({
   return (
     <>
       <h1 className="h1">
-        {market.length} plans in {utility.name} territory. Here's what they cost at {kwh.toLocaleString()} kWh.
+        {market.length} plans available at your address. Here's what they cost at {kwh.toLocaleString()} kWh.
       </h1>
       <p className="sub">
         Live offers from PowerToChoose.org, the state's official comparison site, priced at your usage.
@@ -877,5 +901,58 @@ function DeadEnd({
         </div>
       </div>
     </Step>
+  );
+}
+
+/**
+ * Split ZIPs (e.g. 78660: Austin Energy or Oncor) need one answer. Customers rarely know
+ * which company owns their wires, but they do know who sends their bill: a city
+ * utility or co-op bills directly, while in retail-choice areas the bill comes from
+ * the provider they picked.
+ */
+function SplitZipQuestion({
+  options,
+  city,
+  selected,
+  onPick,
+}: {
+  options: UtilityInfo[];
+  city: string | null;
+  selected: UtilityInfo | null;
+  onPick: (u: UtilityInfo) => void;
+}) {
+  const assigned = options.find(o => !o.choice);
+  const open = options.find(o => o.choice);
+  if (assigned && open) {
+    return (
+      <div>
+        <div className="h2">{city ? `${city} is served by two utilities. ` : ''}Who sends your electric bill?</div>
+        <div className="options">
+          <Option selected={selected?.code === assigned.code} onClick={() => onPick(assigned)}>
+            {assigned.name}
+          </Option>
+          <Option
+            selected={selected?.code === open.code}
+            onClick={() => onPick(open)}
+            hint="Any retail provider, like TXU, Reliant or Gexa"
+          >
+            Another company
+          </Option>
+        </div>
+      </div>
+    );
+  }
+  // Two retail-choice utilities: fall back to naming them, with a pointer to the bill
+  return (
+    <div>
+      <div className="h2">Which company's name is under "Delivery" on your bill?</div>
+      <div className="options">
+        {options.map(o => (
+          <Option key={o.code} selected={selected?.code === o.code} onClick={() => onPick(o)}>
+            {o.name}
+          </Option>
+        ))}
+      </div>
+    </div>
   );
 }

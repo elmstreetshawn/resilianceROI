@@ -97,18 +97,22 @@ export const loadZips = () =>
 
 // ---------- Lookups ----------
 
-/** Utility from the URL param if Base already passed one, else the ZIP table. */
+/**
+ * Utility from the URL param if Base already passed one, else the ZIP table. Some ZIPs
+ * are split between utilities (78660: Austin Energy and Oncor, per Base's own
+ * zip-router); those return every option and `info: null` so the funnel can ask once.
+ */
 export async function resolveUtility(
   zip: string,
   utilityParam?: string | null,
-): Promise<{ info: UtilityInfo | null; city: string | null }> {
-  const zips = await loadZips();
-  const row = zips.find(z => z.zip === zip);
-  const code = (utilityParam || row?.utility || '').toUpperCase();
-  // Record<string, UtilityInfo> indexing is typed as always-present, so without this
-  // explicit return type, TS infers `info: UtilityInfo` (never null) here - masking
-  // the real, exercised null case (unmapped ZIP) that NewFunnel.tsx already checks for.
-  return { info: UTILITIES[code] ?? null, city: row?.city ?? null };
+): Promise<{ info: UtilityInfo | null; options: UtilityInfo[]; city: string | null }> {
+  const rows = (await loadZips()).filter(z => z.zip === zip);
+  // Record<string, UtilityInfo> indexing is typed as always-present, so the explicit
+  // return type and filter keep the real null case (unmapped ZIP) visible to callers.
+  const options = rows.map(r => UTILITIES[r.utility.toUpperCase()]).filter((u): u is UtilityInfo => Boolean(u));
+  const fromParam = utilityParam ? UTILITIES[utilityParam.toUpperCase()] ?? null : null;
+  const info = fromParam ?? (options.length === 1 ? options[0] : null);
+  return { info, options, city: rows[0]?.city ?? null };
 }
 
 export async function reliabilityFor(utility: string) {

@@ -39,7 +39,7 @@ function Harness({ initialScreen = 'zip' as AfterScreen, leadId = null as string
 describe('NewFunnel', () => {
   beforeEach(() => {
     vi.clearAllMocks(); // call-count assertions (e.g. createLead) must not see leftover calls from earlier tests
-    vi.mocked(data.resolveUtility).mockResolvedValue({ info: ONCOR, city: 'Dallas' });
+    vi.mocked(data.resolveUtility).mockResolvedValue({ info: ONCOR, options: [], city: 'Dallas' });
     vi.mocked(data.reliabilityFor).mockResolvedValue([
       { utility: 'ONCOR', year: 2024, saidi_minutes: 120, saifi_times: 1.1, saidi_minutes_no_major_events: 60, source: 'x' },
     ]);
@@ -56,12 +56,23 @@ describe('NewFunnel', () => {
       vi.mocked(data.resolveUtility).mockReturnValue(new Promise(r => (resolveUtil = r)));
       render(<Harness />);
       expect(screen.getByText('Continue')).toBeDisabled();
-      resolveUtil({ info: ONCOR, city: 'Dallas' });
+      resolveUtil({ info: ONCOR, options: [], city: 'Dallas' });
       await waitFor(() => expect(screen.getByText('Continue')).toBeEnabled());
     });
 
+    it('asks one plain-language question for a split ZIP, and the answer settles retail choice', async () => {
+      const austin = { code: 'AUSTIN_ENERGY', name: 'Austin Energy', choice: false, region: 'City of Austin' };
+      vi.mocked(data.resolveUtility).mockResolvedValue({ info: null, options: [ONCOR, austin], city: 'Pflugerville' });
+      render(<Harness />);
+      expect(await screen.findByText(/Who sends your electric bill/)).toBeInTheDocument();
+      expect(screen.getByText('Continue')).toBeDisabled();
+      await userEvent.click(screen.getByText('Another company'));
+      expect(await screen.findByText(/You can choose your electricity provider/)).toBeInTheDocument();
+      expect(screen.getByText('Continue')).toBeEnabled();
+    });
+
     it('shows a not-found message and keeps Continue disabled for an unmapped zip', async () => {
-      vi.mocked(data.resolveUtility).mockResolvedValue({ info: null, city: null });
+      vi.mocked(data.resolveUtility).mockResolvedValue({ info: null, options: [], city: null });
       render(<Harness />);
       expect(await screen.findByText(/don't have ZIP/)).toBeInTheDocument();
       expect(screen.getByText('Continue')).toBeDisabled();
@@ -108,7 +119,7 @@ describe('NewFunnel', () => {
       render(<Harness initialScreen="usage" />);
       await screen.findByText(/how much electricity/i);
       await userEvent.click(screen.getByText('Compare plans in my area'));
-      expect(await screen.findByText(/plans in .* territory/i)).toBeInTheDocument();
+      expect(await screen.findByText(/plans available at your address/i)).toBeInTheDocument();
     });
   });
 
@@ -123,6 +134,7 @@ describe('NewFunnel', () => {
     it('shows a no-choice message instead of a plan table for a non-deregulated utility', async () => {
       vi.mocked(data.resolveUtility).mockResolvedValue({
         info: { code: 'AUSTIN_ENERGY', name: 'Austin Energy', choice: false, region: 'City of Austin' },
+        options: [],
         city: 'Austin',
       });
       render(<Harness initialScreen="compare" />);

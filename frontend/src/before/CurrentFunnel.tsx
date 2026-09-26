@@ -4,25 +4,28 @@ import { Option, Step } from '../components/Step';
 // Faithful re-creation of Base's live funnel screens (captured 2026-09-26) so the demo
 // can show "what they have" next to "what we made". Copy is verbatim.
 
-export const BEFORE_SCREENS = ['reason', 'provider', 'plan', 'deadend'] as const;
+export const BEFORE_SCREENS = ['utility', 'reason', 'provider', 'plan', 'deadend'] as const;
 export type BeforeScreen = (typeof BEFORE_SCREENS)[number];
 
 interface Props {
   screen: BeforeScreen;
   go: (s: BeforeScreen) => void;
+  /** ZIP shown on the homepage utility screen */
+  zip?: string;
 }
 
-export function CurrentFunnel({ screen, go }: Props) {
+export function CurrentFunnel({ screen, go, zip = '78660' }: Props) {
   const [selected, setSelected] = useState<'energy' | 'battery' | null>(null);
 
-  // reason -> provider -> plan only. 'deadend' is NOT the "next" screen after a normal
-  // plan pick - it's Base's real dead-end for "I already have a whole-home battery",
-  // reached from an earlier (unreproduced) screen. It was a real bug that both
-  // "Select plan" buttons used to fall through this same next() and always landed
-  // there regardless of which plan was chosen - fixed below with a local confirmation
-  // instead of a forced screen change. 'deadend' stays reachable for Compare.tsx's
-  // side-by-side demo, which deep-links to it directly.
-  const FORWARD_ORDER: BeforeScreen[] = ['reason', 'provider', 'plan'];
+  // utility -> reason -> provider -> plan only. 'utility' is the homepage question Base
+  // shows for split ZIPs before the funnel starts. 'deadend' is NOT the "next" screen
+  // after a normal plan pick - it's Base's real dead-end for "I already have a
+  // whole-home battery", reached from an earlier (unreproduced) screen. It was a real
+  // bug that both "Select plan" buttons used to fall through this same next() and
+  // always landed there regardless of which plan was chosen - fixed below with a local
+  // confirmation instead of a forced screen change. 'deadend' stays reachable for
+  // Compare.tsx's side-by-side demo, which deep-links to it directly.
+  const FORWARD_ORDER: BeforeScreen[] = ['utility', 'reason', 'provider', 'plan'];
   const next = () => {
     const i = FORWARD_ORDER.indexOf(screen);
     if (i >= 0 && i < FORWARD_ORDER.length - 1) go(FORWARD_ORDER[i + 1]);
@@ -31,6 +34,42 @@ export function CurrentFunnel({ screen, go }: Props) {
     const i = BEFORE_SCREENS.indexOf(screen);
     if (i > 0) go(BEFORE_SCREENS[i - 1]);
   };
+
+  // Homepage (www.basepowercompany.com) after entering a split ZIP, before the funnel starts
+  if (screen === 'utility')
+    return (
+      <div className="card">
+        <div className="step-head">
+          <span className="step-back" aria-hidden>
+            ←
+          </span>
+        </div>
+        <div className="split" style={{ alignItems: 'stretch' }}>
+          <div style={{ padding: '24px 8px' }}>
+            <div className="step-label" style={{ marginBottom: 6 }}>
+              {zip}
+            </div>
+            <h1 className="h1">Who's your local utility?</h1>
+            <p className="sub">So we can show the right plan and next steps for this address.</p>
+            <div className="options">
+              <Option onClick={next}>Austin Energy</Option>
+              <Option onClick={next}>Oncor</Option>
+            </div>
+            <div className="spacer" />
+            <p className="small">
+              <strong style={{ color: 'var(--grey-100)' }}>Not sure?</strong>
+              <br />
+              Look at your bill for the "Delivery" or "TDU" section
+              <br />
+              Search your inbox for outage texts or alerts
+              <br />
+              Still can't find it? Email us: <u>team@basepowercompany.com</u>
+            </p>
+          </div>
+          <div className="hero-art" />
+        </div>
+      </div>
+    );
 
   if (screen === 'reason')
     return (
