@@ -25,7 +25,7 @@ vi.mock('../lib/api', async () => {
 const ONCOR = { code: 'ONCOR', name: 'Oncor', choice: true, region: 'Dallas-Fort Worth & Central Texas' };
 const BASE_PLAN: data.Plan = {
   utility: 'ONCOR', company: 'Base Power', product: 'Base Energy', kwh500: 0.14, kwh1000: 0.13, kwh2000: 0.12,
-  rate_type: 'Fixed', term_months: 12, renewable_pct: 0, prepaid: false, time_of_use: false, min_usage: false,
+  rate_type: 'Fixed', term_months: 36, renewable_pct: 0, prepaid: false, time_of_use: false, min_usage: false,
   fees_credits: '', cancel_fee: '', facts_url: '',
 };
 const MARKET_PLAN: data.Plan = { ...BASE_PLAN, company: 'Rival Co', product: 'Rival Plan', kwh500: 0.2, kwh1000: 0.18, kwh2000: 0.17 };

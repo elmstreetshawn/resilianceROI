@@ -609,37 +609,34 @@ interface Square {
   caption: string;
 }
 
-/** Short/medium/long commitment bucket, so a 36-month rate is judged against other
- * 36-month-ish rates, not blended in with 3-month teasers that are structurally
- * cheaper because the retailer is carrying far less price risk. */
-function termTier(months: number): 'short' | 'medium' | 'long' {
-  if (months >= 24) return 'long';
-  if (months >= 12) return 'medium';
-  return 'short';
+// Base's product is a 3-year (36-month) commitment - the term of the one real listing
+// we have (CenterPoint). A 30-day or 90-day retail plan isn't a fair comparison to
+// that: short commitments price lower purely because the retailer is on the hook for
+// less time, not because they're a better deal. Every comparison against Base below -
+// the table, the median, the four-square - uses only other 3-year plans, so it's
+// apples to apples throughout instead of Base's long lock-in vs. everyone else's
+// shortest teaser.
+const THREE_YEAR_TERM_MONTHS = 36;
+
+/** Non-Base, non-prepaid plans at the same 3-year term as Base's own plan. */
+function threeYearMarket(plans: Plan[]): Plan[] {
+  return plans.filter(
+    p => p.company !== 'Base Power' && !p.prepaid && p.term_months === THREE_YEAR_TERM_MONTHS,
+  );
 }
 
 /**
- * $/mo Base undercuts the market by at this usage - null if we have no real Base
- * listing for this territory (most utilities: PowerToChoose only carries one today,
- * in CenterPoint, a 36-month plan). Shared by the plan-card copy and the four-square
- * so both agree with each other instead of one asserting "below market" while the
- * other, fed the same data, says otherwise.
- *
- * Compares Base's plan against others of a similar commitment length, not the whole
- * market blended together: a market median across every term is dominated by
- * short 3-12mo teaser plans, which price lower than a 36-month plan simply because
- * the retailer is on the hook for less time - not because they're a better deal.
- * Falls back to the full market only if there aren't enough same-tier plans to
- * make a meaningful median.
+ * $/mo Base undercuts the 3-year market by at this usage - null if we have no real
+ * Base listing for this territory (most utilities: PowerToChoose only carries one
+ * today, in CenterPoint). Shared by the plan-card copy and the four-square so both
+ * agree with each other instead of one asserting "below market" while the other, fed
+ * the same data, says otherwise.
  */
 function computeRateSavings(plans: Plan[], kwh: number): number | null {
   const base = plans.find(p => p.company === 'Base Power');
-  if (!base) return null;
-  const market = plans.filter(p => p.company !== 'Base Power' && !p.prepaid);
-  if (!market.length) return null;
-  const cohort = market.filter(p => termTier(p.term_months) === termTier(base.term_months));
-  const comparisonSet = cohort.length >= 5 ? cohort : market;
-  return median(comparisonSet.map(p => priceAt(p, kwh))) * kwh - monthlyBill(base, kwh);
+  const market = threeYearMarket(plans);
+  if (!base || !market.length) return null;
+  return median(market.map(p => priceAt(p, kwh))) * kwh - monthlyBill(base, kwh);
 }
 
 /**
@@ -681,12 +678,12 @@ function buildFourSquare({
         ? {
             id: 'rate',
             value: `$${Math.round(rateSavings)}/mo`,
-            caption: 'lower than plans of a similar term at your usage, locked in - no minimum-usage fee',
+            caption: 'lower than other 3-year plans at your usage, locked in - no minimum-usage fee',
           }
         : {
             id: 'rate',
             value: 'At market',
-            caption: 'close to the median for plans of a similar term at your usage - fixed for the life of your plan, with no minimum-usage fee or bill-credit games',
+            caption: 'close to the median for other 3-year plans at your usage - fixed for the life of your plan, with no minimum-usage fee or bill-credit games',
           }
       : {
           id: 'rate',
@@ -784,7 +781,6 @@ function ComparePlans({
   utility: UtilityInfo | null;
   onNext: () => void;
 }) {
-  const [fixedOnly, setFixedOnly] = useState(true);
   // Default true: a minimum-usage bill-credit plan's headline kwh1000 price is real (it
   // already includes TDU delivery, like every EFL price here) but only that low because
   // the credit is tuned to land exactly at 1,000 kWh - at 500 kWh the same plan is often
@@ -794,9 +790,12 @@ function ComparePlans({
   const [hideMinUsage, setHideMinUsage] = useState(true);
 
   const base = plans.find(p => p.company === 'Base Power');
-  const market = plans.filter(p => p.company !== 'Base Power' && !p.prepaid);
+  // Only other 3-year plans - Base's product is a 36-month commitment, and a 30-day or
+  // 90-day plan isn't a fair price comparison to that (see threeYearMarket's comment).
+  // Every 3-year plan in this data is already Fixed-rate, so no separate toggle for that.
+  const market = threeYearMarket(plans);
   const shown = market
-    .filter(p => (!fixedOnly || p.rate_type === 'Fixed') && (!hideMinUsage || !p.min_usage))
+    .filter(p => !hideMinUsage || !p.min_usage)
     .sort((a, b) => priceAt(a, kwh) - priceAt(b, kwh))
     .slice(0, 6);
   const marketMedian = median(market.map(p => priceAt(p, kwh)));
@@ -823,13 +822,14 @@ function ComparePlans({
   return (
     <>
       <h1 className="h1">
-        {market.length} plans available at your address. Here's what they cost at {kwh.toLocaleString()} kWh.
+        {market.length} other 3-year plans available at your address. Here's what they cost at{' '}
+        {kwh.toLocaleString()} kWh.
       </h1>
       <p className="sub">
-        Live offers from PowerToChoose.org, the state's official comparison site, priced at your usage. Every price
-        below is the plan's full delivered rate - energy plus TDU delivery charges - straight from its Electricity
-        Facts Label, the same way Base's rate is. No plan here is showing an energy-only teaser next to Base's
-        all-in one.
+        Live offers from PowerToChoose.org, the state's official comparison site, priced at your usage. Base's plan
+        is a 3-year commitment, so this only shows other 3-year plans too - a 30-day or 90-day plan isn't a fair
+        price comparison to a 3-year lock-in. Every price below is the plan's full delivered rate - energy plus TDU
+        delivery charges - straight from its Electricity Facts Label, the same way Base's rate is.
       </p>
 
       {topTrap && (
@@ -846,9 +846,6 @@ function ComparePlans({
 
       <div className="spacer" />
       <div className="row" style={{ marginBottom: 10 }}>
-        <Option className="chip chip--neutral" selected={fixedOnly} onClick={() => setFixedOnly(v => !v)}>
-          Fixed rate only
-        </Option>
         <Option className="chip chip--neutral" selected={hideMinUsage} onClick={() => setHideMinUsage(v => !v)}>
           Hide minimum-usage fees
         </Option>
@@ -907,7 +904,7 @@ function ComparePlans({
         </table>
       </div>
       <p className="small" style={{ marginTop: 8 }}>
-        "Mild month" is the same plan at {mild.toLocaleString()} kWh. Market median at your usage:{' '}
+        "Mild month" is the same plan at {mild.toLocaleString()} kWh. 3-year plan median at your usage:{' '}
         {(marketMedian * 100).toFixed(1)}¢/kWh
         {base ? '' : '. Base guarantees a rate below market average; your exact rate is quoted at signup'}. Prices
         include delivery charges, per each plan's Electricity Facts Label.
