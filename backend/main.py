@@ -1,10 +1,12 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pathlib import Path
+import base64
 from ercot_processor import ERCOTDataProcessor
 from ercot_outage_processor import ERCOTOutageProcessor
 from noaa_daily_processor import NOAADailyProcessor
 from postal_zip_processor import PostalZipProcessor
+from bill_analyzer import PowerBillAnalyzer
 
 app = Flask(__name__)
 CORS(app)
@@ -14,6 +16,7 @@ postal_processor = PostalZipProcessor()
 ercot = None  # Will be initialized after loading zip mapping
 outage = ERCOTOutageProcessor()
 weather = NOAADailyProcessor()
+bill_analyzer = PowerBillAnalyzer()
 
 # Data loading state
 _data_loaded = False
@@ -219,6 +222,97 @@ def analyze_battery_need():
         "qualification_reason": reason,
         "next_steps": next_steps,
     })
+
+# ============ BILL ANALYSIS (Skip Manual Entry) ============
+
+@app.route("/analyze-power-bill", methods=["POST"])
+def analyze_power_bill():
+    """Upload power bill image, extract usage, return ROI directly"""
+    load_data()
+
+    try:
+        data = request.json or {}
+        image_source = data.get("image", "")
+        zip_code = data.get("zip_code", "")
+
+        if not image_source:
+            # Try file upload
+            if 'file' in request.files:
+                file = request.files['file']
+                if file:
+                    image_source = file.read()
+                    image_source = base64.b64encode(image_source).decode('utf-8')
+            else:
+                return jsonify({"error": "No image provided"}), 400
+
+        if not zip_code:
+            return jsonify({"error": "ZIP code required for zone mapping"}), 400
+
+        # Analyze bill image
+        bill_data = bill_analyzer.analyze_bill_image(image_source)
+
+        if not bill_analyzer.validate_extraction():
+            return jsonify({
+                "error": "Could not extract bill data from image",
+                "ocr_result": bill_data,
+                "hint": "Make sure the bill image is clear and contains usage and amount due"
+            }), 400
+
+        # Get extracted values
+        monthly_kwh = bill_data.get("monthly_kwh", 900)
+        average_bill = bill_data.get("bill_amount", 120)
+
+        # Get zone and calculate ROI
+        zone = ercot.get_zone_by_zip(zip_code)
+        zone_metrics = ercot.calculate_zone_risk(zone)
+
+        risk_score = zone_metrics.get("risk_score", 0)
+        outage_hours = zone_metrics.get("outage_hours_per_year", 0)
+
+        battery_capacity = calculate_battery_size(monthly_kwh)
+        monthly_savings = calculate_monthly_savings(outage_hours, average_bill)
+        roi_payback_years = calculate_roi_years(battery_capacity, monthly_savings)
+
+        # Qualification
+        min_risk = 30
+        max_roi = 12
+        min_monthly_savings = 25
+
+        qualifies = (
+            risk_score > min_risk and
+            (roi_payback_years < max_roi or monthly_savings > min_monthly_savings)
+        )
+
+        confidence = 0.85 if outage_hours > 0 else 0.65
+        reason = _generate_reason(qualifies, risk_score, roi_payback_years, monthly_savings)
+
+        next_steps = None
+        if qualifies:
+            next_steps = (
+                f"[OK] You qualify! A {battery_capacity:.0f}kWh system would pay for itself in "
+                f"{roi_payback_years:.1f} years. Connect with a Base Power specialist for a custom quote."
+            )
+
+        return jsonify({
+            "extraction": bill_data,
+            "extracted_monthly_kwh": monthly_kwh,
+            "extracted_bill_amount": average_bill,
+            "qualified": qualifies,
+            "zip_code": zip_code,
+            "zone": zone,
+            "risk_score": risk_score,
+            "estimated_outage_hours_per_year": outage_hours,
+            "roi_years": roi_payback_years,
+            "monthly_savings": monthly_savings,
+            "recommended_capacity_kwh": battery_capacity,
+            "confidence": confidence,
+            "qualification_reason": reason,
+            "next_steps": next_steps,
+        })
+
+    except Exception as e:
+        print(f"[ERROR] Bill analysis error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 # ============ Helpers ============
 
