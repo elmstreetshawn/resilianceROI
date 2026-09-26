@@ -439,6 +439,10 @@ export function NewFunnel({ screen, go, initialZip, utilityParam, leadId }: Prop
     // works with the backend offline.
     const recommendBattery = analysis ? analysis.qualified : reason !== 'rate' || (worst?.saidi_minutes ?? 0) >= 600;
     const squares = buildFourSquare({ plans, kwh, backup, analysis, reason });
+    // Same number the four-square uses - so this card never claims "below market" on a
+    // screen that, a few inches away, honestly says otherwise.
+    const rateSavings = computeRateSavings(plans, kwh);
+    const belowMarket = rateSavings == null || rateSavings > 0;
     return (
       <Step step={STEP_OF.plan} total={TOTAL} onBack={back}>
         <h1 className="h1">You have two options to power your home with Base.</h1>
@@ -448,8 +452,12 @@ export function NewFunnel({ screen, go, initialZip, utilityParam, leadId }: Prop
         <div className="plans">
           <PlanCard
             name="Base energy plan"
-            desc="Low, fixed electricity rates guaranteed below market average."
-            items={['Fixed rate, below market average', 'No minimum-usage fee', { text: 'No backup in an outage', no: true }]}
+            desc={belowMarket ? 'Low, fixed electricity rates guaranteed below market average.' : 'A fixed electricity rate, locked in - no minimum-usage fee or bill-credit games.'}
+            items={[
+              belowMarket ? 'Fixed rate, below market average' : 'Fixed rate, locked in',
+              'No minimum-usage fee',
+              { text: 'No backup in an outage', no: true },
+            ]}
             onSelect={() => {
               setChoice('energy');
               go('done');
@@ -601,6 +609,39 @@ interface Square {
   caption: string;
 }
 
+/** Short/medium/long commitment bucket, so a 36-month rate is judged against other
+ * 36-month-ish rates, not blended in with 3-month teasers that are structurally
+ * cheaper because the retailer is carrying far less price risk. */
+function termTier(months: number): 'short' | 'medium' | 'long' {
+  if (months >= 24) return 'long';
+  if (months >= 12) return 'medium';
+  return 'short';
+}
+
+/**
+ * $/mo Base undercuts the market by at this usage - null if we have no real Base
+ * listing for this territory (most utilities: PowerToChoose only carries one today,
+ * in CenterPoint, a 36-month plan). Shared by the plan-card copy and the four-square
+ * so both agree with each other instead of one asserting "below market" while the
+ * other, fed the same data, says otherwise.
+ *
+ * Compares Base's plan against others of a similar commitment length, not the whole
+ * market blended together: a market median across every term is dominated by
+ * short 3-12mo teaser plans, which price lower than a 36-month plan simply because
+ * the retailer is on the hook for less time - not because they're a better deal.
+ * Falls back to the full market only if there aren't enough same-tier plans to
+ * make a meaningful median.
+ */
+function computeRateSavings(plans: Plan[], kwh: number): number | null {
+  const base = plans.find(p => p.company === 'Base Power');
+  if (!base) return null;
+  const market = plans.filter(p => p.company !== 'Base Power' && !p.prepaid);
+  if (!market.length) return null;
+  const cohort = market.filter(p => termTier(p.term_months) === termTier(base.term_months));
+  const comparisonSet = cohort.length >= 5 ? cohort : market;
+  return median(comparisonSet.map(p => priceAt(p, kwh))) * kwh - monthlyBill(base, kwh);
+}
+
 /**
  * Automotive four-square instinct: compute all four numbers, then lead with whichever
  * one actually closes this customer instead of a fixed "our best stat first" order.
@@ -620,21 +661,41 @@ function buildFourSquare({
   analysis: StageTwoAnalysis | null;
   reason: Reason | null;
 }): Square[] {
-  const base = plans.find(p => p.company === 'Base Power');
-  const market = plans.filter(p => p.company !== 'Base Power' && !p.prepaid);
-  const rateSavings =
-    base && market.length ? median(market.map(p => priceAt(p, kwh))) * kwh - monthlyBill(base, kwh) : null;
+  const rateSavings = computeRateSavings(plans, kwh);
 
   const outageAnnual = analysis?.outage_protection_value_annual ?? OUTAGE_COST_TOTAL;
   const riskScore = analysis?.risk_score ?? null;
   const riskTier = analysis?.risk_tier ?? null;
 
+  // Three honest cases, not one fallback string for two different situations:
+  //  - we have Base's real listed rate here AND it beats the market median -> show the
+  //    real $ savings.
+  //  - we have Base's real rate AND it does NOT beat the median (happens - Base isn't
+  //    always the cheapest ¢/kWh everywhere) -> say so, lead with the fixed-rate/no-fee
+  //    value instead of a false "below market" claim.
+  //  - we have no PowerToChoose row for Base in this territory at all -> fall back to
+  //    Base's own stated guarantee, since there's no real number here to check it against.
+  const rateSquare: Square =
+    rateSavings != null
+      ? rateSavings > 0
+        ? {
+            id: 'rate',
+            value: `$${Math.round(rateSavings)}/mo`,
+            caption: 'lower than plans of a similar term at your usage, locked in - no minimum-usage fee',
+          }
+        : {
+            id: 'rate',
+            value: 'At market',
+            caption: 'close to the median for plans of a similar term at your usage - fixed for the life of your plan, with no minimum-usage fee or bill-credit games',
+          }
+      : {
+          id: 'rate',
+          value: 'Below market',
+          caption: 'Base guarantees a rate below market average; your exact rate is quoted at signup',
+        };
+
   const squares: Record<Square['id'], Square> = {
-    rate: {
-      id: 'rate',
-      value: rateSavings != null && rateSavings > 0 ? `$${Math.round(rateSavings)}/mo` : 'Below market',
-      caption: 'lower than the median plan at your usage, locked in - no minimum-usage fee',
-    },
+    rate: rateSquare,
     backup: {
       id: 'backup',
       value: `${Math.round(backup.essentials)}h`,
@@ -654,8 +715,11 @@ function buildFourSquare({
     },
   };
 
+  // Only lead with 'rate' for a rate-motivated customer if it's an actual strength here
+  // (real savings, or no data to contradict Base's own guarantee) - never front a "your
+  // rate isn't beating the market" square just because that's the stated reason.
   const order: Square['id'][] =
-    reason === 'rate'
+    reason === 'rate' && (rateSavings == null || rateSavings > 0)
       ? ['rate', 'certainty', 'outage_cost', 'backup']
       : riskTier === 'SEVERE' || riskTier === 'HIGH'
         ? ['outage_cost', 'backup', 'certainty', 'rate']
@@ -721,7 +785,13 @@ function ComparePlans({
   onNext: () => void;
 }) {
   const [fixedOnly, setFixedOnly] = useState(true);
-  const [hideMinUsage, setHideMinUsage] = useState(false);
+  // Default true: a minimum-usage bill-credit plan's headline kwh1000 price is real (it
+  // already includes TDU delivery, like every EFL price here) but only that low because
+  // the credit is tuned to land exactly at 1,000 kWh - at 500 kWh the same plan is often
+  // 2-3x higher. Left visible by default, a handful of these dominate the "cheapest"
+  // sort and make Base's flat, no-credit rate look like the expensive outlier when it's
+  // usually cheaper across a real year of varying usage. They're a toggle away, not gone.
+  const [hideMinUsage, setHideMinUsage] = useState(true);
 
   const base = plans.find(p => p.company === 'Base Power');
   const market = plans.filter(p => p.company !== 'Base Power' && !p.prepaid);
@@ -756,17 +826,21 @@ function ComparePlans({
         {market.length} plans available at your address. Here's what they cost at {kwh.toLocaleString()} kWh.
       </h1>
       <p className="sub">
-        Live offers from PowerToChoose.org, the state's official comparison site, priced at your usage.
+        Live offers from PowerToChoose.org, the state's official comparison site, priced at your usage. Every price
+        below is the plan's full delivered rate - energy plus TDU delivery charges - straight from its Electricity
+        Facts Label, the same way Base's rate is. No plan here is showing an energy-only teaser next to Base's
+        all-in one.
       </p>
 
       {topTrap && (
         <div className="callout callout--warn">
           <strong>Watch the minimum-usage trap.</strong> {traps.length} of these plans charge a fee or pull a bill
-          credit if you use too little. {topTrap.plan.company}'s "{topTrap.plan.product}" advertises{' '}
-          {(topTrap.plan.kwh1000 * 100).toFixed(1)}¢ at 1,000 kWh but costs{' '}
+          credit if you use too little - hidden from the table below by default. {topTrap.plan.company}'s "
+          {topTrap.plan.product}" advertises {(topTrap.plan.kwh1000 * 100).toFixed(1)}¢ at 1,000 kWh but costs{' '}
           <strong>{(topTrap.plan.kwh500 * 100).toFixed(1)}¢ at 500 kWh</strong>
-          {topTrap.plan.fees_credits ? ` (${topTrap.plan.fees_credits.replace(/\.$/, '')})` : ''}. A mild month can wipe
-          out the "deal". <strong>Base has no minimum-usage fee.</strong>
+          {topTrap.plan.fees_credits ? ` (${topTrap.plan.fees_credits.replace(/\.$/, '')})` : ''}. Both figures
+          already include delivery - the swing is the credit, not hidden TDU charges. A mild month can wipe out the
+          "deal". <strong>Base has no minimum-usage fee.</strong>
         </div>
       )}
 
