@@ -245,3 +245,24 @@ a { color: var(--brand); }
 .topbar nav a { text-decoration: none; color: var(--grey-80); }
 .topbar nav a.on { color: var(--green-90); font-weight: 700; }
 .embedded .topbar { display: none; }
+
+/* ---------- Base homepage hero (before view, first step of signup) ---------- */
+
+.home-hero {
+  border-radius: var(--radius-card); overflow: hidden; color: var(--white); min-height: 560px;
+  display: flex; flex-direction: column;
+  /* Stand-in for Base's hero photo (not bundled): warm evening light over a porch */
+  background: linear-gradient(180deg, rgba(16, 42, 23, 0.1), rgba(16, 42, 23, 0.55)),
+    linear-gradient(160deg, #9bb4c9 0%, #c9b98f 45%, #6f8f4e 70%, #4f6b35 100%);
+}
+.home-hero__nav { display: flex; align-items: center; gap: 20px; padding: 16px 22px; font-size: 13px; }
+.home-hero__logo { font-weight: 800; letter-spacing: 0.08em; border: 2px solid currentColor; border-radius: 4px; padding: 0 5px; }
+.home-hero__links { flex: 1; opacity: 0.9; }
+.home-hero__cta { background: var(--green-20); color: var(--green-100); font-weight: 600; padding: 6px 12px; border-radius: 6px; }
+.home-hero__body { margin-top: auto; padding: 0 32px 40px; max-width: 560px; }
+.home-hero__rating { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.home-hero__title { font-size: 40px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; margin-bottom: 10px; }
+.home-hero__sub { font-size: 14px; margin-bottom: 16px; }
+.home-hero__zip { display: flex; gap: 8px; background: var(--white); border-radius: 8px; padding: 6px; }
+.home-hero__zip input { flex: 1; border: 0; font: inherit; font-size: 15px; padding: 0 10px; color: var(--grey-100); outline: none; min-width: 0; }
+.home-hero__note { font-size: 11px; margin-top: 8px; opacity: 0.9; }

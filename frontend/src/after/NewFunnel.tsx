@@ -58,8 +58,10 @@ interface Props {
 }
 
 export function NewFunnel({ screen, go, initialZip, utilityParam, leadId }: Props) {
-  const [zipInput, setZipInput] = useState(initialZip);
-  const [zip, setZip] = useState(initialZip);
+  // The ZIP box starts empty (the customer types it); deep links to later screens
+  // still get a ZIP from the URL or the demo default so they can render.
+  const [zipInput, setZipInput] = useState('');
+  const [zip, setZip] = useState(screen === 'zip' ? '' : initialZip);
   const [utility, setUtility] = useState<UtilityInfo | null>(null);
   // More than one entry = split ZIP; the customer answers one plain-language question
   const [utilityOptions, setUtilityOptions] = useState<UtilityInfo[]>([]);
@@ -129,6 +131,11 @@ export function NewFunnel({ screen, go, initialZip, utilityParam, leadId }: Prop
   useEffect(() => {
     let live = true;
     setLookupDone(false);
+    if (!/^\d{5}$/.test(zip)) {
+      setUtility(null);
+      setUtilityOptions([]);
+      return;
+    }
     (async () => {
       // A URL utility only applies to the ZIP it came with
       const { info, options = [], city } = await resolveUtility(zip, zip === initialZip ? utilityParam : null);
@@ -217,7 +224,11 @@ export function NewFunnel({ screen, go, initialZip, utilityParam, leadId }: Prop
             inputMode="numeric"
             maxLength={5}
             value={zipInput}
-            onChange={e => setZipInput(e.target.value.replace(/\D/g, ''))}
+            onChange={e => {
+              const v = e.target.value.replace(/\D/g, '');
+              setZipInput(v);
+              if (v.length === 5) setZip(v); // look up as soon as the ZIP is complete
+            }}
             aria-label="ZIP code"
           />
           <button className="btn btn--ghost" type="submit" disabled={!valid || zipInput === zip}>

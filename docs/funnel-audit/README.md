@@ -21,6 +21,7 @@ Screenshots with notes: [`screenshots/`](screenshots/)
 
 - `funnel-steps-2-and-4.png` covers findings 1 and 2
 - `funnel-step-7-and-deadend.png` covers findings 3 and 4
+- `homepage-hero.png`: the homepage ZIP box, the first step of signup
 - `homepage-utility-78660.png`: the homepage's "Who's your local utility?" screen for a split ZIP. It comes before the funnel, and step 4 asks again
 
 ## Data to back the battery case

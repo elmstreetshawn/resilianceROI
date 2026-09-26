@@ -32,19 +32,19 @@ describe('App routing', () => {
     it('shows a context note explaining the curated step numbers, not embedded', () => {
       setRoute('#/before/reason');
       render(<App />);
-      expect(screen.getByText(/reproduces 5 specific screens/i)).toBeInTheDocument();
+      expect(screen.getByText(/reproduces 6 specific screens/i)).toBeInTheDocument();
     });
 
     it('hides the context note when embedded (used inside Compare\'s iframes)', () => {
       setRoute('#/before/reason', '?embed=1');
       render(<App />);
-      expect(screen.queryByText(/reproduces 5 specific screens/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/reproduces 6 specific screens/i)).not.toBeInTheDocument();
     });
 
-    it('falls back to the homepage utility screen for an unknown before-screen', () => {
+    it('falls back to the homepage ZIP box, the first step of signup, for an unknown before-screen', () => {
       setRoute('#/before/nonsense');
       render(<App />);
-      expect(screen.getByText("Who's your local utility?")).toBeInTheDocument();
+      expect(screen.getByText('Save money. Stay powered.')).toBeInTheDocument();
     });
   });
 
@@ -68,8 +68,8 @@ describe('Compare view', () => {
 
   it('has a tab for every comparison pair, defaulting to the first', () => {
     render(<App />);
-    const tabs = ['Utility', 'Provider (asked again)', 'Why Base?', 'Compare the market', 'Pick a plan', 'Already have a battery'];
+    const tabs = ['ZIP & utility', 'Provider (asked again)', 'Why Base?', 'Compare the market', 'Pick a plan', 'Already have a battery'];
     for (const t of tabs) expect(screen.getByText(t)).toBeInTheDocument();
-    expect(screen.getByText('Utility')).toHaveClass('compare-tab--on');
+    expect(screen.getByText('ZIP & utility')).toHaveClass('compare-tab--on');
   });
 });

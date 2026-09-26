@@ -6,11 +6,11 @@ import { useState } from 'react';
 const PAIRS = [
   {
     id: 'utility',
-    title: 'Utility',
-    before: 'utility',
+    title: 'ZIP & utility',
+    before: 'home',
     after: 'zip',
     notes: [
-      'For a split ZIP, the homepage asks "Who\'s your local utility?" using the names of wire companies most customers have never seen. The fallback is to dig through your bill or email.',
+      'Signup starts at the homepage ZIP box. For a split ZIP, the next screen asks "Who\'s your local utility?" using the names of wire companies most customers have never seen. The fallback is to dig through your bill or email.',
       'One question, only for split ZIPs, in words people know: who sends your electric bill? It settles retail choice too, so nothing is asked twice.',
     ],
   },

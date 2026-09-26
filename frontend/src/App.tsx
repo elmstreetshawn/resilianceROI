@@ -9,7 +9,7 @@ import { Compare } from './compare/Compare';
 //   #/after/<screen>     our funnel
 // Query string mirrors Base's funnel: ?postal_code=78660&utility=ONCOR (&embed=1 hides the top bar)
 
-const DEFAULT_ZIP = '78660';
+const DEFAULT_ZIP = '77096'; // Houston (CenterPoint): demo default for deep-linked screens
 
 function useHashRoute() {
   const [hash, setHash] = useState(window.location.hash);
@@ -35,13 +35,14 @@ export default function App() {
 
   let body;
   if (section === 'before') {
-    const s = (BEFORE_SCREENS as readonly string[]).includes(screen) ? (screen as BeforeScreen) : 'utility';
+    const s = (BEFORE_SCREENS as readonly string[]).includes(screen) ? (screen as BeforeScreen) : 'home';
     body = (
       <div className="page page--narrow">
         {!embedded && (
           <p className="small" style={{ color: 'var(--grey-60)', marginBottom: 12 }}>
-            This reproduces 5 specific screens from Base's real funnel - the homepage utility question for a split
-            ZIP, then funnel steps 2, 4, 7 &amp; 10 - the ones our redesign changes. It's not the full funnel.
+            This reproduces 6 specific screens from Base's real signup - the homepage ZIP box, its utility question
+            for a split ZIP, then funnel steps 2, 4, 7 &amp; 10 - the ones our redesign changes. It's not the full
+            funnel.
           </p>
         )}
         <CurrentFunnel screen={s} go={next => navigate(`before/${next}`)} zip={zip} />
@@ -74,7 +75,7 @@ export default function App() {
           <a href="#/compare" className={section === 'compare' ? 'on' : ''}>
             Before / after
           </a>
-          <a href="#/before/utility" className={section === 'before' ? 'on' : ''}>
+          <a href="#/before/home" className={section === 'before' ? 'on' : ''}>
             Current funnel
           </a>
           <a href="#/after/zip" className={section === 'after' ? 'on' : ''}>
