@@ -1,0 +1,364 @@
+:root {
+  --primary: #10b981;
+  --secondary: #64748b;
+  --success: #059669;
+  --danger: #ef4444;
+  --bg: #f8fafc;
+  --text: #1e293b;
+  --border: #e2e8f0;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background-color: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  background: linear-gradient(135deg, var(--primary), var(--success));
+  color: white;
+  padding: 3rem 2rem;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.header h1 {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.header p {
+  font-size: 1.1rem;
+  opacity: 0.95;
+}
+
+.container {
+  max-width: 700px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  flex: 1;
+  width: 100%;
+}
+
+.stage-card {
+  background: white;
+  padding: 2.5rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.stage-card h2 {
+  font-size: 1.8rem;
+  margin-bottom: 0.5rem;
+  color: var(--text);
+}
+
+.subtitle {
+  color: var(--secondary);
+  font-size: 1rem;
+  margin-bottom: 2rem;
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-group label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--text);
+}
+
+.form-group input {
+  width: 100%;
+  padding: 0.85rem;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+.form-group small {
+  display: block;
+  color: var(--secondary);
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.btn {
+  padding: 0.85rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  width: 100%;
+  background-color: var(--primary);
+  color: white;
+  margin-top: 1rem;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--success);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.3);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background-color: var(--secondary);
+  color: white;
+  margin-top: 0.5rem;
+}
+
+.btn-secondary:hover {
+  background-color: #475569;
+}
+
+.btn-cta {
+  width: 100%;
+  background-color: var(--primary);
+  color: white;
+  font-size: 1.05rem;
+  padding: 1rem;
+  margin-top: 1.5rem;
+}
+
+.button-group {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.button-group button {
+  flex: 1;
+  margin-top: 0;
+}
+
+/* Risk Awareness Card */
+.risk-card {
+  border-left: 5px solid var(--primary);
+}
+
+.risk-header {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 2px solid var(--border);
+}
+
+.risk-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  background: rgba(16, 185, 129, 0.05);
+  border-radius: 8px;
+}
+
+.risk-stat {
+  text-align: center;
+}
+
+.stat-number {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 0.5rem;
+}
+
+.stat-label {
+  font-size: 0.9rem;
+  color: var(--secondary);
+  line-height: 1.4;
+}
+
+.risk-narrative {
+  background: #f8fafc;
+  padding: 1.5rem;
+  border-radius: 8px;
+  border-left: 4px solid var(--primary);
+  margin-bottom: 1.5rem;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.personalized-message {
+  background: rgba(16, 185, 129, 0.1);
+  border: 2px solid var(--primary);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  display: flex;
+  gap: 1rem;
+}
+
+.message-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+}
+
+.personalized-message p {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.decision-question {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 2px solid var(--border);
+}
+
+.decision-question h3 {
+  font-size: 1.3rem;
+  margin-bottom: 0.5rem;
+}
+
+.decision-question > p {
+  color: var(--secondary);
+  margin-bottom: 1.5rem;
+}
+
+/* Results */
+.results {
+  background: white;
+  padding: 2.5rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.results.qualified {
+  border-left: 5px solid var(--primary);
+}
+
+.results.not-qualified {
+  border-left: 5px solid var(--secondary);
+}
+
+.result-header {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 2px solid var(--border);
+}
+
+.result-header h2 {
+  font-size: 1.6rem;
+  margin-bottom: 1rem;
+}
+
+.qualification-reason {
+  background: rgba(16, 185, 129, 0.1);
+  border-left: 4px solid var(--primary);
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.result-card {
+  background: #f8fafc;
+  padding: 1.5rem;
+  border-radius: 8px;
+  text-align: center;
+  border: 2px solid var(--border);
+}
+
+.result-card h3 {
+  color: var(--secondary);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  margin-bottom: 0.75rem;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.score {
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 0.5rem;
+}
+
+.result-card p {
+  color: var(--secondary);
+  font-size: 0.9rem;
+}
+
+.next-steps {
+  background: rgba(16, 185, 129, 0.05);
+  border: 2px solid var(--primary);
+  padding: 2rem;
+  border-radius: 8px;
+  margin-bottom: 2rem;
+}
+
+.next-steps h3 {
+  color: var(--primary);
+  margin-bottom: 1rem;
+}
+
+.next-steps p {
+  color: var(--text);
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 640px) {
+  .header h1 {
+    font-size: 1.75rem;
+  }
+
+  .stage-card,
+  .results {
+    padding: 1.5rem;
+  }
+
+  .result-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .button-group {
+    flex-direction: column;
+  }
+
+  .button-group button {
+    flex: unset;
+  }
+}
