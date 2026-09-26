@@ -15,7 +15,7 @@ npm run dev          # http://localhost:3000
 | Route | What it is |
 |-------|------------|
 | `#/compare` (default) | **Demo view.** Base's current screen next to ours, one tab per funnel moment |
-| `#/before/<reason\|provider\|plan\|deadend>` | Re-creation of Base's live funnel (copy verbatim, captured 2026-09-26) |
+| `#/before/<home\|utility\|reason\|provider\|plan\|deadend>` | Re-creation of Base's live signup, starting at the homepage ZIP box (copy verbatim, captured 2026-09-26) |
 | `#/after/<zip\|risk\|usage\|compare\|plan\|done\|deadend>` | Our funnel |
 
 Query params mirror Base's funnel: `?postal_code=77096&utility=CENTERPOINT`.

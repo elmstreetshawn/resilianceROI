@@ -1,31 +1,33 @@
 import { useState } from 'react';
 import { Option, Step } from '../components/Step';
+import { resolveUtility } from '../lib/data';
 
 // Faithful re-creation of Base's live funnel screens (captured 2026-09-26) so the demo
 // can show "what they have" next to "what we made". Copy is verbatim.
 
-export const BEFORE_SCREENS = ['utility', 'reason', 'provider', 'plan', 'deadend'] as const;
+export const BEFORE_SCREENS = ['home', 'utility', 'reason', 'provider', 'plan', 'deadend'] as const;
 export type BeforeScreen = (typeof BEFORE_SCREENS)[number];
 
 interface Props {
   screen: BeforeScreen;
   go: (s: BeforeScreen) => void;
-  /** ZIP shown on the homepage utility screen */
+  /** ZIP prefilled on the homepage and shown on the utility screen */
   zip?: string;
 }
 
 export function CurrentFunnel({ screen, go, zip = '78660' }: Props) {
   const [selected, setSelected] = useState<'energy' | 'battery' | null>(null);
+  const [homeZip, setHomeZip] = useState(zip);
 
-  // utility -> reason -> provider -> plan only. 'utility' is the homepage question Base
-  // shows for split ZIPs before the funnel starts. 'deadend' is NOT the "next" screen
+  // home -> utility -> reason -> provider -> plan only. 'home' is Base's homepage ZIP
+  // box; 'utility' is the question it shows for split ZIPs before the funnel starts. 'deadend' is NOT the "next" screen
   // after a normal plan pick - it's Base's real dead-end for "I already have a
   // whole-home battery", reached from an earlier (unreproduced) screen. It was a real
   // bug that both "Select plan" buttons used to fall through this same next() and
   // always landed there regardless of which plan was chosen - fixed below with a local
   // confirmation instead of a forced screen change. 'deadend' stays reachable for
   // Compare.tsx's side-by-side demo, which deep-links to it directly.
-  const FORWARD_ORDER: BeforeScreen[] = ['utility', 'reason', 'provider', 'plan'];
+  const FORWARD_ORDER: BeforeScreen[] = ['home', 'utility', 'reason', 'provider', 'plan'];
   const next = () => {
     const i = FORWARD_ORDER.indexOf(screen);
     if (i >= 0 && i < FORWARD_ORDER.length - 1) go(FORWARD_ORDER[i + 1]);
@@ -34,6 +36,47 @@ export function CurrentFunnel({ screen, go, zip = '78660' }: Props) {
     const i = BEFORE_SCREENS.indexOf(screen);
     if (i > 0) go(BEFORE_SCREENS[i - 1]);
   };
+
+  // Homepage hero (www.basepowercompany.com): the ZIP box is the first step of signup.
+  // A split ZIP (per Base's zip-router) goes to the utility question; others go straight
+  // into the funnel, as on the live site.
+  if (screen === 'home')
+    return (
+      <div className="home-hero">
+        <nav className="home-hero__nav">
+          <span className="home-hero__logo">BASE</span>
+          <span className="home-hero__links">Products · Pricing · Resources · Utilities · Company</span>
+          <span className="home-hero__cta">Get started</span>
+        </nav>
+        <div className="home-hero__body">
+          <div className="home-hero__rating">4.8 stars ★★★★★</div>
+          <h1 className="home-hero__title">Save money. Stay powered.</h1>
+          <p className="home-hero__sub">The power company bringing affordable, reliable energy to homes across America.</p>
+          <form
+            className="home-hero__zip"
+            onSubmit={async e => {
+              e.preventDefault();
+              if (!/^\d{5}$/.test(homeZip)) return;
+              const { options } = await resolveUtility(homeZip);
+              go(options.length > 1 ? 'utility' : 'reason');
+            }}
+          >
+            <input
+              inputMode="numeric"
+              maxLength={5}
+              placeholder="Enter your zip code"
+              value={homeZip}
+              onChange={e => setHomeZip(e.target.value.replace(/\D/g, ''))}
+              aria-label="ZIP code"
+            />
+            <button className="btn" type="submit">
+              See available plans
+            </button>
+          </form>
+          <div className="home-hero__note">Join 30,000+ homes powered by Base</div>
+        </div>
+      </div>
+    );
 
   // Homepage (www.basepowercompany.com) after entering a split ZIP, before the funnel starts
   if (screen === 'utility')
@@ -47,7 +90,7 @@ export function CurrentFunnel({ screen, go, zip = '78660' }: Props) {
         <div className="split" style={{ alignItems: 'stretch' }}>
           <div style={{ padding: '24px 8px' }}>
             <div className="step-label" style={{ marginBottom: 6 }}>
-              {zip}
+              {homeZip}
             </div>
             <h1 className="h1">Who's your local utility?</h1>
             <p className="sub">So we can show the right plan and next steps for this address.</p>

@@ -1,8 +1,17 @@
 import { useState } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { BEFORE_SCREENS, CurrentFunnel, type BeforeScreen } from './CurrentFunnel';
+import * as data from '../lib/data';
+
+vi.mock('../lib/data', async importOriginal => {
+  const actual = await importOriginal<typeof import('../lib/data')>();
+  return { ...actual, resolveUtility: vi.fn() };
+});
+
+const ONCOR = { code: 'ONCOR', name: 'Oncor', choice: true, region: 'x' };
+const AUSTIN = { code: 'AUSTIN_ENERGY', name: 'Austin Energy', choice: false, region: 'x' };
 
 function Harness({ initialScreen = 'reason' as BeforeScreen }) {
   const [screen, setScreen] = useState<BeforeScreen>(initialScreen);
@@ -10,12 +19,27 @@ function Harness({ initialScreen = 'reason' as BeforeScreen }) {
 }
 
 describe('CurrentFunnel', () => {
-  it('reproduces the homepage utility question plus funnel steps 2, 4, 7, 10, by design', () => {
+  it('home: a split ZIP goes to the utility question, like the live homepage', async () => {
+    vi.mocked(data.resolveUtility).mockResolvedValue({ info: null, options: [ONCOR, AUSTIN], city: 'Pflugerville' });
+    render(<Harness initialScreen="home" />);
+    await userEvent.click(screen.getByText('See available plans'));
+    expect(await screen.findByText("Who's your local utility?")).toBeInTheDocument();
+    expect(screen.getByText('78660')).toBeInTheDocument();
+  });
+
+  it('home: a single-utility ZIP goes straight into the funnel', async () => {
+    vi.mocked(data.resolveUtility).mockResolvedValue({ info: ONCOR, options: [ONCOR], city: 'Dallas' });
+    render(<Harness initialScreen="home" />);
+    await userEvent.click(screen.getByText('See available plans'));
+    expect(await screen.findByText('Step 2 of 10')).toBeInTheDocument();
+  });
+
+  it('reproduces the homepage ZIP box and utility question plus funnel steps 2, 4, 7, 10, by design', () => {
     // This is a documentation test, not a bug guard: the app-level context note
     // (App.tsx) is what tells a viewer this is intentional curation, not a broken
     // reproduction that skips step 1. See App.test.tsx for that note's presence.
-    // 'utility' is the homepage's split-ZIP question, shown before the funnel's steps.
-    expect(BEFORE_SCREENS).toEqual(['utility', 'reason', 'provider', 'plan', 'deadend']);
+    // 'home' is the homepage ZIP box and 'utility' its split-ZIP question, both before the funnel's steps.
+    expect(BEFORE_SCREENS).toEqual(['home', 'utility', 'reason', 'provider', 'plan', 'deadend']);
     render(<Harness initialScreen="reason" />);
     expect(screen.getByText('Step 2 of 10')).toBeInTheDocument();
   });

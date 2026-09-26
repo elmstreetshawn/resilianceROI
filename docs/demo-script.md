@@ -8,7 +8,7 @@ screens, sources, and code. Avoid adjectives.
 
 **Speakers:** **B** = Brian (funnel, front end, go-to-market) · **S** = Shawn (data, backend, lead handling)
 
-Read the lines at a normal pace: about 130 words per minute. The script is about 608 words, which comes to roughly 4:40.
+Read the lines at a normal pace: about 130 words per minute. The script is about 615 words, which comes to roughly 4:43.
 
 ---
 
@@ -25,10 +25,10 @@ Read the lines at a normal pace: about 130 words per minute. The script is about
 
 ## 0:25–1:00 · Three leaks
 
-**Screen:** before/after page, "Utility" tab, then "Provider (asked again)". Then the offline copy of Base's live funnel (`offline/base-funnel/index.html`) for leaks two and three.
+**Screen:** before/after page, "ZIP & utility" tab: type 78660 on Base's homepage, click "See available plans" to reach the utility question. Then the "Provider (asked again)" tab. Then the offline copy of Base's live funnel (`offline/base-funnel/index.html`) for leaks two and three.
 
-> **B:** Leak one: asking twice, in the wrong words. Pflugerville is split, so the
-> homepage asks: Austin Energy or Oncor? Most people have never seen the name
+> **B:** Leak one: asking twice, in the wrong words. Signup starts with a ZIP.
+> Pflugerville is split, so the next screen asks: Austin Energy or Oncor? Most people have never seen the name
 > of the company that owns their wires. Then step 4 asks again whether you can
 > choose your provider. Answer wrong and you land on a waitlist.
 >
