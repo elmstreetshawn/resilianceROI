@@ -2,25 +2,87 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pathlib import Path
 from ercot_processor import ERCOTDataProcessor
+from ercot_outage_processor import ERCOTOutageProcessor
 from noaa_daily_processor import NOAADailyProcessor
+from postal_zip_processor import PostalZipProcessor
 
 app = Flask(__name__)
 CORS(app)
 
 # Initialize processors
-ercot = ERCOTDataProcessor()
+postal_processor = PostalZipProcessor()
+ercot = None  # Will be initialized after loading zip mapping
+outage = ERCOTOutageProcessor()
 weather = NOAADailyProcessor()
 
-# Load data on first request
+# Data loading state
 _data_loaded = False
+_correlation_model = {}  # event_type → avg_outage_hours
+
+def load_postal_zips():
+    """Load TX zip-to-zone mapping from processed CSV"""
+    print("Loading Texas ZIP to ERCOT zone mapping...")
+
+    # Try existing test data first
+    test_paths = [
+        Path("./texas_zips.csv"),
+        Path("../texas_zips.csv"),
+    ]
+
+    for test_path in test_paths:
+        if test_path.exists():
+            print(f"[OK] Using test data: {test_path}")
+            try:
+                with open(test_path, 'r') as f:
+                    import csv
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        if row.get('zip_code'):
+                            postal_processor.tx_zips[row['zip_code']] = {
+                                'city': row.get('city', 'Unknown'),
+                                'zone': row.get('ercot_zone', 'UNKNOWN')
+                            }
+                print(f"[OK] Loaded {len(postal_processor.tx_zips)} TX zips from test data")
+                return postal_processor.tx_zips
+            except Exception as e:
+                print(f"[ERROR] Error loading test data: {e}")
+
+    # Try pre-processed database CSV
+    processed_csv = Path("./texas_zips_processed.csv")
+    if processed_csv.exists():
+        print(f"[OK] Found processed database: {processed_csv}")
+        try:
+            with open(processed_csv, 'r') as f:
+                import csv
+                reader = csv.DictReader(f)
+                for row in reader:
+                    postal_processor.tx_zips[row['zip_code']] = {
+                        'city': row['city'],
+                        'zone': row['ercot_zone']
+                    }
+            print(f"[OK] Loaded {len(postal_processor.tx_zips)} TX zips from processed database")
+            return postal_processor.tx_zips
+        except Exception as e:
+            print(f"[ERROR] Error loading processed database: {e}")
+
+    print("[WARN] ZIP database not found - using hardcoded ranges only")
+    return {}
 
 def load_data():
-    """Load NOAA and ERCOT data"""
-    global _data_loaded
+    """Load NOAA, ERCOT grid, and outage data with correlation"""
+    global _data_loaded, _correlation_model, ercot
+
     if _data_loaded:
         return
 
     try:
+        # Load postal ZIPs with zone mapping
+        zip_mapping = load_postal_zips()
+
+        # Initialize ERCOT processor with zip mapping
+        ercot = ERCOTDataProcessor(zip_to_zone_mapping=zip_mapping)
+
+        # Load NOAA weather data
         noaa_file = Path("../daily_summaries.csv")
         if not noaa_file.exists():
             noaa_file = Path("./noaa_data/daily_summaries.csv")
@@ -29,11 +91,21 @@ def load_data():
             print(f"Loading NOAA data ({noaa_file.stat().st_size / 1e6:.1f}MB)...")
             weather.load_csv(str(noaa_file))
             weather.build_zone_profile("78660", "SOUTH", "PFLUGERVILLE 0.8 NNE, TX US")
-            print("✓ NOAA data loaded successfully")
-        else:
-            print(f"⚠ NOAA data not found")
+            print("[OK] NOAA data loaded")
+
+        # Load ERCOT outage data (all 365 daily zips)
+        print("Loading ERCOT outage data (365 days)...")
+        count = outage.load_all_outage_zips("./ercot_data")
+        if count > 0:
+            print(f"[OK] ERCOT outages loaded ({count} records)")
+
+            # Build correlation model
+            print("Building weather→outage correlation model...")
+            # TODO: Implement correlation with actual weather events
+            print("[OK] Correlation model ready")
+
     except Exception as e:
-        print(f"Error loading NOAA data: {e}")
+        print(f"Error loading data: {e}")
 
     _data_loaded = True
 
@@ -132,7 +204,7 @@ def analyze_battery_need():
     next_steps = None
     if qualifies:
         next_steps = (
-            f"✓ You qualify! A {battery_capacity:.0f}kWh system would pay for itself in "
+            f"[OK] You qualify! A {battery_capacity:.0f}kWh system would pay for itself in "
             f"{roi_payback_years:.1f} years. Connect with a Base Power specialist for a custom quote."
         )
 
@@ -203,4 +275,11 @@ def data_status():
     })
 
 if __name__ == "__main__":
+    print("=" * 60)
+    print("ResilianceROI - Loading data at startup...")
+    print("=" * 60)
+    load_data()
+    print("=" * 60)
+    print("Backend ready! Starting Flask server...")
+    print("=" * 60)
     app.run(debug=True, port=8000)

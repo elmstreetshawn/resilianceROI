@@ -44,11 +44,11 @@ class NOAADailyProcessor:
                         continue
 
             self.weather_data = rows
-            print(f"✓ Loaded {len(rows)} weather records")
+            print(f"[OK] Loaded {len(rows)} weather records")
             return rows
 
         except FileNotFoundError:
-            print(f"✗ File not found: {filepath}")
+            print(f"[ERROR] File not found: {filepath}")
             return []
 
     def identify_severe_weather_days(self) -> List[Dict]:

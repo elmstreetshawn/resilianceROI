@@ -3,7 +3,7 @@ ERCOT data processor for battery ROI analysis
 Converts raw ERCOT CSVs into risk scores by load zone
 """
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from datetime import datetime, timedelta
 
 ERCOT_DATA_DIR = Path("./ercot_data")
@@ -18,12 +18,13 @@ LOAD_ZONES = {
 }
 
 class ERCOTDataProcessor:
-    def __init__(self, data_dir: str = str(ERCOT_DATA_DIR)):
+    def __init__(self, data_dir: str = str(ERCOT_DATA_DIR), zip_to_zone_mapping: Dict = None):
         self.data_dir = Path(data_dir)
         self.outages_df = None
         self.load_df = None
         self.adequacy_df = None
         self.zone_metrics = {}
+        self.zip_to_zone_mapping = zip_to_zone_mapping or {}  # zip_code → zone
 
     def load_unplanned_outages(self, filepath: str) -> pd.DataFrame:
         """Load 'Unplanned Resource Outages Report' CSV"""
@@ -156,7 +157,16 @@ class ERCOTDataProcessor:
         return 20.0
 
     def get_zone_by_zip(self, zip_code: str) -> str:
-        """Map zip code to ERCOT load zone"""
+        """Map zip code to ERCOT load zone (from postal DB or fallback to ranges)"""
+        # Try postal database mapping first
+        if zip_code in self.zip_to_zone_mapping:
+            zone_data = self.zip_to_zone_mapping[zip_code]
+            # Handle both string and dict formats
+            if isinstance(zone_data, dict):
+                return zone_data.get('zone', 'SOUTH')
+            return zone_data
+
+        # Fall back to ZIP range lookup
         zip_int = int(zip_code[:5])
         for zone, config in LOAD_ZONES.items():
             if config["zip_range"][0] <= zip_int <= config["zip_range"][1]:
