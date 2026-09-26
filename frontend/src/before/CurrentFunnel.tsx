@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Option, Step } from '../components/Step';
 
 // Faithful re-creation of Base's live funnel screens (captured 2026-09-26) so the demo
@@ -12,9 +13,19 @@ interface Props {
 }
 
 export function CurrentFunnel({ screen, go }: Props) {
+  const [selected, setSelected] = useState<'energy' | 'battery' | null>(null);
+
+  // reason -> provider -> plan only. 'deadend' is NOT the "next" screen after a normal
+  // plan pick - it's Base's real dead-end for "I already have a whole-home battery",
+  // reached from an earlier (unreproduced) screen. It was a real bug that both
+  // "Select plan" buttons used to fall through this same next() and always landed
+  // there regardless of which plan was chosen - fixed below with a local confirmation
+  // instead of a forced screen change. 'deadend' stays reachable for Compare.tsx's
+  // side-by-side demo, which deep-links to it directly.
+  const FORWARD_ORDER: BeforeScreen[] = ['reason', 'provider', 'plan'];
   const next = () => {
-    const i = BEFORE_SCREENS.indexOf(screen);
-    if (i < BEFORE_SCREENS.length - 1) go(BEFORE_SCREENS[i + 1]);
+    const i = FORWARD_ORDER.indexOf(screen);
+    if (i >= 0 && i < FORWARD_ORDER.length - 1) go(FORWARD_ORDER[i + 1]);
   };
   const back = () => {
     const i = BEFORE_SCREENS.indexOf(screen);
@@ -64,8 +75,8 @@ export function CurrentFunnel({ screen, go }: Props) {
             <div className="plan__body">
               <div className="plan__name">Base energy plan</div>
               <p className="plan__desc">Low, fixed electricity rates guaranteed below market average.</p>
-              <button className="btn btn--block" onClick={next}>
-                Select plan
+              <button className="btn btn--block" onClick={() => setSelected('energy')}>
+                {selected === 'energy' ? '✓ Selected' : 'Select plan'}
               </button>
             </div>
           </div>
@@ -81,12 +92,19 @@ export function CurrentFunnel({ screen, go }: Props) {
               <p className="plan__desc">
                 The same low rate, plus a Base home battery so you're covered when the grid goes down.*
               </p>
-              <button className="btn btn--block" onClick={next}>
-                Select plan
+              <button className="btn btn--block" onClick={() => setSelected('battery')}>
+                {selected === 'battery' ? '✓ Selected' : 'Select plan'}
               </button>
             </div>
           </div>
         </div>
+        {selected && (
+          <p className="small" style={{ marginTop: 16, color: 'var(--grey-60)' }}>
+            This recreation stops here - Base's real funnel continues to address/scheduling screens we didn't
+            capture. (The dead-end screen shown elsewhere in this demo is a separate path, for customers who already
+            have a whole-home battery - it's not what happens after a normal plan pick.)
+          </p>
+        )}
       </Step>
     );
 

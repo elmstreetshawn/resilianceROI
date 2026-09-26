@@ -82,6 +82,10 @@ export function Compare({ search }: { search: string }) {
           ))}
         </div>
       </div>
+      <p className="small" style={{ color: 'var(--grey-60)', marginTop: -8, marginBottom: 16 }}>
+        Each tab jumps both funnels straight to that one moment for comparison - it's not a live, continuous
+        session, so switching tabs doesn't mean you selected anything on the previous one.
+      </p>
 
       <div className="compare-cols">
         <div>

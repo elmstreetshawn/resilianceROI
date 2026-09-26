@@ -98,10 +98,16 @@ export const loadZips = () =>
 // ---------- Lookups ----------
 
 /** Utility from the URL param if Base already passed one, else the ZIP table. */
-export async function resolveUtility(zip: string, utilityParam?: string | null) {
+export async function resolveUtility(
+  zip: string,
+  utilityParam?: string | null,
+): Promise<{ info: UtilityInfo | null; city: string | null }> {
   const zips = await loadZips();
   const row = zips.find(z => z.zip === zip);
   const code = (utilityParam || row?.utility || '').toUpperCase();
+  // Record<string, UtilityInfo> indexing is typed as always-present, so without this
+  // explicit return type, TS infers `info: UtilityInfo` (never null) here - masking
+  // the real, exercised null case (unmapped ZIP) that NewFunnel.tsx already checks for.
   return { info: UTILITIES[code] ?? null, city: row?.city ?? null };
 }
 

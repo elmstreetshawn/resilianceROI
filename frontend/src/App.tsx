@@ -38,6 +38,12 @@ export default function App() {
     const s = (BEFORE_SCREENS as readonly string[]).includes(screen) ? (screen as BeforeScreen) : 'reason';
     body = (
       <div className="page page--narrow">
+        {!embedded && (
+          <p className="small" style={{ color: 'var(--grey-60)', marginBottom: 12 }}>
+            This reproduces 4 specific screens (2, 4, 7 &amp; 10) from Base's real 10-step funnel - the ones our
+            redesign changes. It's not the full funnel, so the step count starts at 2, not 1.
+          </p>
+        )}
         <CurrentFunnel screen={s} go={next => navigate(`before/${next}`)} />
       </div>
     );
@@ -50,6 +56,7 @@ export default function App() {
           go={next => navigate(`after/${next}`)}
           initialZip={zip}
           utilityParam={params.get('utility')}
+          leadId={params.get('lead')}
         />
       </div>
     );

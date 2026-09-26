@@ -1,7 +1,7 @@
 // Optional link to the Flask backend (backend/main.py). The funnel works from the
 // static CSVs alone; when the backend is up it adds NOAA severe-weather history.
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+export const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
 export interface WeatherRisk {
   severe_weather_events_5yr: number;
@@ -266,13 +266,16 @@ export async function fetchLead(leadId: string): Promise<Lead | null> {
 
 export interface VisualizeResult {
   placement: { x: number; y: number; width: number; height: number; source: 'model' | 'default' };
-  image_base64: string;
+  product_image_url: string;
+  product_aspect_ratio: number;
 }
 
-/** "See it in your space" - composites the battery product photo onto the customer's
- * own install-area photo, placed by a local vision model (Ollama, no API key, nothing
- * leaves this machine - see backend/install_visualizer.py). Can take ~1-60s depending
- * on whether the model is already warm. */
+/** "See it in your space" - a local vision model (Ollama, no API key, nothing leaves
+ * this machine - see backend/install_visualizer.py) suggests where the battery goes in
+ * the customer's own install-area photo. Returns the placement + the product image URL
+ * only, NOT a flattened composite - the frontend renders the product as its own movable/
+ * resizable layer over the photo so the customer can adjust it, rather than trusting a
+ * server-baked image. Can take ~1-60s depending on whether the model is already warm. */
 export async function visualizeInstall(photo: File): Promise<VisualizeResult | null> {
   try {
     const form = new FormData();

@@ -11,6 +11,7 @@ import {
   type SiteSurveyResult,
   type VisualizeResult,
 } from '../lib/api';
+import { PlacementCanvas } from './PlacementCanvas';
 
 interface Props {
   zip: string;
@@ -41,6 +42,7 @@ export function SiteSurvey({ zip, leadId }: Props) {
   const [result, setResult] = useState<SiteSurveyResult | null>(null);
   const [visualizing, setVisualizing] = useState(false);
   const [visualization, setVisualization] = useState<VisualizeResult | null>(null);
+  const [visualizedPhoto, setVisualizedPhoto] = useState<File | null>(null);
   const [visualizeFailed, setVisualizeFailed] = useState(false);
   const [slots, setSlots] = useState<FollowUpWindow[]>([]);
   const [requestSubmitted, setRequestSubmitted] = useState<FollowUpRequestConfirmation | null>(null);
@@ -74,6 +76,7 @@ export function SiteSurvey({ zip, leadId }: Props) {
     setPhotos(p => ({ ...p, [category]: [...p[category], ...newFiles] }));
     if (category === 'install_area') {
       setVisualization(null);
+      setVisualizedPhoto(null);
       setVisualizeFailed(false);
     }
   };
@@ -82,6 +85,7 @@ export function SiteSurvey({ zip, leadId }: Props) {
     setPhotos(p => ({ ...p, [category]: p[category].filter((_, i) => i !== index) }));
     if (category === 'install_area') {
       setVisualization(null);
+      setVisualizedPhoto(null);
       setVisualizeFailed(false);
     }
   };
@@ -96,6 +100,7 @@ export function SiteSurvey({ zip, leadId }: Props) {
     setVisualizeFailed(false);
     const r = await visualizeInstall(photo);
     setVisualization(r);
+    setVisualizedPhoto(r ? photo : null);
     setVisualizeFailed(!r);
     setVisualizing(false);
   };
@@ -249,17 +254,20 @@ export function SiteSurvey({ zip, leadId }: Props) {
                   photos are still fine to submit.
                 </p>
               )}
-              {visualization && (
+              {visualization && visualizedPhoto && (
                 <div style={{ marginTop: 10 }}>
-                  <img
-                    src={`data:image/jpeg;base64,${visualization.image_base64}`}
-                    alt="Preview of the battery placed in your install area"
-                    style={{ width: '100%', borderRadius: 12, border: '1px solid var(--grey-20)' }}
+                  {visualization.placement.source === 'default' && (
+                    <p className="small" style={{ marginBottom: 6, color: 'var(--grey-60)' }}>
+                      Couldn't reach the local placement model, so this starts at a default spot - drag it to where
+                      it actually belongs.
+                    </p>
+                  )}
+                  <PlacementCanvas
+                    photo={visualizedPhoto}
+                    initialPlacement={visualization.placement}
+                    productImageUrl={visualization.product_image_url}
+                    productAspectRatio={visualization.product_aspect_ratio}
                   />
-                  <p className="small" style={{ marginTop: 6, color: 'var(--grey-60)' }}>
-                    Approximate preview{visualization.placement.source === 'default' ? ' (default placement)' : ''} -
-                    actual size and fit confirmed at your site visit.
-                  </p>
                 </div>
               )}
             </div>

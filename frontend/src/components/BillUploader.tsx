@@ -7,6 +7,20 @@ export interface BillData {
   bill_amount: number;
   provider?: string;
   address?: string;
+  // /analyze-power-bill already computes the full ROI analysis in the same call -
+  // pass it through instead of re-fetching /stage2/analyze with the extracted values.
+  analysis?: {
+    qualified: boolean;
+    risk_score: number;
+    risk_tier: 'LOW' | 'MODERATE' | 'HIGH' | 'SEVERE';
+    estimated_outage_hours_per_year: number;
+    outage_protection_value_monthly: number;
+    outage_protection_value_annual: number;
+    recommended_capacity_kwh: number;
+    confidence: number;
+    qualification_reason: string;
+    next_steps: string | null;
+  };
 }
 
 interface Props {
@@ -41,7 +55,16 @@ export function BillUploader({ zip, onSuccess, onCancel }: Props) {
           });
 
           if (!response.ok) {
-            setError('Failed to analyze bill. Make sure it\'s a clear photo.');
+            const body = await response.json().catch(() => null);
+            // Surface the backend's actual reason (e.g. OCR not installed) instead of
+            // always blaming the photo - that sent people looking for a clearer photo
+            // when the real fix was "click Enter usage manually" instead.
+            const notes = body?.ocr_result?.extraction_notes as string | undefined;
+            setError(
+              notes?.startsWith('Analysis failed: OCR reader not initialized')
+                ? 'Photo scanning isn\'t available right now - enter your usage manually instead.'
+                : (body?.hint ?? 'Failed to analyze bill. Make sure it\'s a clear photo.'),
+            );
             setLoading(false);
             return;
           }
@@ -59,6 +82,18 @@ export function BillUploader({ zip, onSuccess, onCancel }: Props) {
             bill_amount: data.extracted_bill_amount,
             provider: data.extraction?.provider,
             address: data.extraction?.address,
+            analysis: {
+              qualified: data.qualified,
+              risk_score: data.risk_score,
+              risk_tier: data.risk_tier,
+              estimated_outage_hours_per_year: data.estimated_outage_hours_per_year,
+              outage_protection_value_monthly: data.outage_protection_value_monthly,
+              outage_protection_value_annual: data.outage_protection_value_annual,
+              recommended_capacity_kwh: data.recommended_capacity_kwh,
+              confidence: data.confidence,
+              qualification_reason: data.qualification_reason,
+              next_steps: data.next_steps,
+            },
           });
         } catch (err) {
           setError('Error processing bill. Try again.');
