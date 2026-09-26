@@ -14,3 +14,5 @@ backend/leads.db
 # derived CSVs (tx_storm_events.csv, zip_risk_index.csv, etc.) are committed
 # and are all main.py needs to run.
 backend/noaa_storm_events/
+# Offline copy of Base's live funnel (their assets and licensed font; keep local)
+offline/

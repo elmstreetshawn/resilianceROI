@@ -1,4 +1,4 @@
-# Frontend: Base signup funnel, rebuilt to sell the battery
+# Frontend: Base signup funnel
 
 React 18 + TypeScript + Vite. It is styled with Base's own design tokens (colors
 pulled from `join.basepowercompany.com`'s CSS), so the new screens read as part of

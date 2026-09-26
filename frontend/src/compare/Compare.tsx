@@ -67,7 +67,7 @@ export function Compare({ search }: { search: string }) {
         <div>
           <div className="eyebrow">Before / after</div>
           <h1 className="h1" style={{ marginBottom: 0 }}>
-            Base's signup funnel, rebuilt to sell the battery
+            Base's signup funnel
           </h1>
         </div>
         <div className="compare-tabs">
