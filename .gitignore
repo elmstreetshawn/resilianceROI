@@ -7,3 +7,5 @@ __pycache__/
 .env
 .env.local
 dist/
+# Offline copy of Base's live funnel (their assets and licensed font; keep local)
+offline/
