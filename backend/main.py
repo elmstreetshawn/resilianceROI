@@ -15,6 +15,13 @@ import install_visualizer
 app = Flask(__name__)
 CORS(app)
 
+# All data-file paths below are anchored here, not to the process's cwd - `python
+# main.py` from backend/, `python backend/main.py` from the repo root, and an IDE
+# "run" button that defaults elsewhere all need to find the same files. Running from
+# the wrong directory used to fail silently (zip_risk_index.csv "not found" logged at
+# startup, then every request quietly served a zeroed-out default risk with no error).
+BACKEND_DIR = Path(__file__).resolve().parent
+
 bill_analyzer = PowerBillAnalyzer()
 
 # Data loading state
@@ -51,7 +58,7 @@ def load_data():
 
     leads_db.init_db()
 
-    index_path = Path("./zip_risk_index.csv")
+    index_path = BACKEND_DIR / "zip_risk_index.csv"
     if not index_path.exists():
         print(f"[ERROR] {index_path} not found - run `python prediction_index.py` to build it")
         _data_loaded = True
@@ -95,25 +102,25 @@ def _load_methodology_data():
     each event type is weighted, and each term of the sum that produced risk_score.
     All are batch-computed by prediction_index.py; regenerate them the same way.
     """
-    county_path = Path("./zip_to_county.csv")
+    county_path = BACKEND_DIR / "zip_to_county.csv"
     if county_path.exists():
         with open(county_path, "r", encoding="utf-8") as f:
             for row in csv.DictReader(f):
                 _county_fips_by_zip[row["zip_code"]] = row["county_fips"]
 
-    events_path = Path("./tx_storm_events.csv")
+    events_path = BACKEND_DIR / "tx_storm_events.csv"
     if events_path.exists():
         with open(events_path, "r", encoding="utf-8") as f:
             for row in csv.DictReader(f):
                 _events_by_county_fips.setdefault(row["county_fips"], []).append(row)
 
-    breakdown_path = Path("./zip_risk_breakdown.csv")
+    breakdown_path = BACKEND_DIR / "zip_risk_breakdown.csv"
     if breakdown_path.exists():
         with open(breakdown_path, "r", encoding="utf-8") as f:
             for row in csv.DictReader(f):
                 _breakdown_by_zip.setdefault(row["zip_code"], []).append(row)
 
-    sensitivity_path = Path("./weather_outage_sensitivity.csv")
+    sensitivity_path = BACKEND_DIR / "weather_outage_sensitivity.csv"
     if sensitivity_path.exists():
         with open(sensitivity_path, "r", encoding="utf-8") as f:
             _sensitivity_table.extend(csv.DictReader(f))
@@ -381,7 +388,7 @@ def follow_up_request_route(lead_id):
 
 # ============ SITE SURVEY (post-submission: install photos + permitting logistics) ============
 
-SITE_SURVEY_DIR = Path("./site_surveys")
+SITE_SURVEY_DIR = BACKEND_DIR / "site_surveys"
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MIN_PHOTO_BYTES = 5_000       # reject empty/near-empty files - not a real photo
 MAX_PHOTO_BYTES = 15_000_000  # 15MB
@@ -484,7 +491,7 @@ def site_survey():
 
 # ============ INSTALL VISUALIZATION ("see it in your space") ============
 
-PRODUCT_IMAGE_PATH = Path("./assets/battery_product.png")
+PRODUCT_IMAGE_PATH = BACKEND_DIR / "assets" / "battery_product.png"
 
 
 @app.route("/assets/battery-product.png", methods=["GET"])
