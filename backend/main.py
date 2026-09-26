@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -487,13 +487,25 @@ def site_survey():
 PRODUCT_IMAGE_PATH = Path("./assets/battery_product.png")
 
 
+@app.route("/assets/battery-product.png", methods=["GET"])
+def battery_product_image():
+    """Serves the product PNG directly so the frontend can render it as its own
+    draggable/resizable layer over the customer's photo, instead of a flattened
+    server-side composite the customer can't adjust."""
+    if not PRODUCT_IMAGE_PATH.exists():
+        return jsonify({"error": "Product image not configured"}), 404
+    return send_file(PRODUCT_IMAGE_PATH, mimetype="image/png")
+
+
 @app.route("/visualize-install", methods=["POST"])
 def visualize_install():
     """
-    Composites the real battery product photo onto the customer's own install-area
-    photo, at a placement picked by a local vision model (Ollama + Qwen2.5-VL - no
-    API key, nothing leaves this machine). See install_visualizer.py for how the
-    placement is found and corrected to the product's real proportions.
+    Finds where the battery should go in the customer's own install-area photo,
+    using a local vision model (Ollama + Qwen2.5-VL - no API key, nothing leaves
+    this machine) - see install_visualizer.py for how the placement is found and
+    corrected to the product's real proportions. Returns the placement only; the
+    frontend renders the product image as its own movable/resizable layer on top
+    of the photo rather than a flattened image, so the customer can adjust it.
     """
     if "photo" not in request.files:
         return jsonify({"error": "photo required"}), 400
@@ -507,20 +519,15 @@ def visualize_install():
     photo_bytes = request.files["photo"].read()
     try:
         Image.open(io.BytesIO(photo_bytes)).verify()
-        photo_img = Image.open(io.BytesIO(photo_bytes))
     except UnidentifiedImageError:
         return jsonify({"error": "Not a readable image file"}), 400
 
     placement = install_visualizer.get_placement(photo_bytes)
-    product_img = Image.open(PRODUCT_IMAGE_PATH)
-    result = install_visualizer.composite(photo_img, product_img, placement)
-
-    buf = io.BytesIO()
-    result.convert("RGB").save(buf, format="JPEG", quality=88)
 
     return jsonify({
         "placement": placement,
-        "image_base64": base64.b64encode(buf.getvalue()).decode(),
+        "product_image_url": "/assets/battery-product.png",
+        "product_aspect_ratio": install_visualizer.PRODUCT_ASPECT_RATIO,
     })
 
 # ============ STAGE 2: Full Analysis ============

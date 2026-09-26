@@ -16,7 +16,11 @@ class ERCOTOutageProcessor:
         self.outage_hours_by_date_region = defaultdict(float)
 
     def load_outage_csv(self, csv_file: str = "ercot_outages_year.csv") -> int:
-        """Load aggregated ERCOT outage CSV file"""
+        """
+        Load the deduped, normalized ERCOT outage CSV produced by
+        aggregate_ercot.py (one row per physical outage, snake_case columns:
+        outage_start, actual_end_date, duration_hours, status, mw_reduction, ...).
+        """
         csv_path = Path(csv_file)
 
         if not csv_path.exists():
@@ -32,61 +36,34 @@ class ERCOTOutageProcessor:
 
                 for row in reader:
                     try:
-                        # Get date from various possible column names
-                        start_str = (
-                            row.get('Actual Outage Start') or
-                            row.get('Actual Outage Start Date') or
-                            row.get('Start Date') or
-                            ''
-                        ).strip()
-
+                        start_str = (row.get('outage_start') or '').strip()
                         if not start_str:
                             continue
 
-                        # Parse date - handle ISO format
                         try:
-                            if 'T' in start_str:
-                                # ISO format with time
-                                start = datetime.fromisoformat(start_str.split('+')[0].split('Z')[0])
-                            else:
-                                # Date only
-                                start = datetime.fromisoformat(start_str)
+                            start = datetime.fromisoformat(start_str.split('+')[0].split('Z')[0])
                         except (ValueError, AttributeError):
                             continue
 
                         date_key = start.strftime('%Y-%m-%d')
 
-                        # Get outage duration or end date
-                        end_str = (
-                            row.get('Actual End Date') or
-                            row.get('End Date') or
-                            ''
-                        ).strip()
+                        # An outage still active or missing a recorded end date has no
+                        # known duration_hours (blank in the CSV) - skip it for
+                        # duration-based correlation rather than guessing.
+                        duration_str = (row.get('duration_hours') or '').strip()
+                        if not duration_str:
+                            continue
 
-                        duration_hours = 1.0  # Default 1 hour if not specified
-
-                        if end_str:
-                            try:
-                                if 'T' in end_str:
-                                    end = datetime.fromisoformat(end_str.split('+')[0].split('Z')[0])
-                                else:
-                                    end = datetime.fromisoformat(end_str)
-
-                                duration_hours = max((end - start).total_seconds() / 3600, 0.1)
-                            except (ValueError, AttributeError):
-                                pass
+                        try:
+                            duration_hours = float(duration_str)
+                        except ValueError:
+                            continue
 
                         # Skip unrealistic durations
                         if duration_hours <= 0 or duration_hours > 8760:
                             continue
 
-                        # MW reduction (optional)
-                        mw_str = (
-                            row.get('Effective MW Reduction Due to Outage') or
-                            row.get('MW Reduction') or
-                            '0'
-                        ).strip()
-
+                        mw_str = (row.get('mw_reduction') or '0').strip()
                         try:
                             mw = float(mw_str.replace(',', ''))
                         except (ValueError, AttributeError):
@@ -106,7 +83,7 @@ class ERCOTOutageProcessor:
                         self.outage_hours_by_date_region[key] += duration_hours
                         total_records += 1
 
-                    except (KeyError, TypeError) as e:
+                    except (KeyError, TypeError):
                         continue
 
             print(f"[OK] Loaded {total_records} ERCOT outage records")

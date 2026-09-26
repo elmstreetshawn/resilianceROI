@@ -7,3 +7,10 @@ __pycache__/
 .env
 .env.local
 dist/
+backend/site_surveys/
+backend/leads.db
+# Raw NOAA Storm Events archives (~65MB, regenerable) - see
+# noaa_storm_events_processor.py's docstring for the download URLs. The
+# derived CSVs (tx_storm_events.csv, zip_risk_index.csv, etc.) are committed
+# and are all main.py needs to run.
+backend/noaa_storm_events/
