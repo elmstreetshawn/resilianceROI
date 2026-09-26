@@ -96,9 +96,9 @@ def load_data():
             weather.build_zone_profile("78660", "SOUTH", "PFLUGERVILLE 0.8 NNE, TX US")
             print("[OK] NOAA data loaded")
 
-        # Load ERCOT outage data (all 365 daily zips)
-        print("Loading ERCOT outage data (365 days)...")
-        count = outage.load_all_outage_zips("./ercot_data")
+        # Load ERCOT outage data (from aggregated yearly CSV)
+        print("Loading ERCOT outage data...")
+        count = outage.load_outage_csv("./ercot_outages_year.csv")
         if count > 0:
             print(f"[OK] ERCOT outages loaded ({count} records)")
 

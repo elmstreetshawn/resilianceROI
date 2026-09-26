@@ -1,9 +1,8 @@
 """
-ERCOT outage data processor - correlates with NOAA weather events
-Loads daily outage CSVs, aggregates by zip code and date
+ERCOT outage data processor - loads aggregated yearly CSV
+Correlates outage dates with NOAA weather events
 """
 import csv
-import zipfile
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List
@@ -13,127 +12,117 @@ class ERCOTOutageProcessor:
     """Process ERCOT unplanned outages and correlate with weather"""
 
     def __init__(self):
-        self.outages_by_date_zip = defaultdict(list)
-        self.outage_durations_by_date_zip = defaultdict(float)
+        self.outages_by_date_region = defaultdict(list)
+        self.outage_hours_by_date_region = defaultdict(float)
 
-    def load_all_outage_zips(self, data_dir: str = "./ercot_data") -> int:
-        """Load all 365 daily outage zip files from directory"""
-        data_path = Path(data_dir)
-        total_records = 0
+    def load_outage_csv(self, csv_file: str = "ercot_outages_year.csv") -> int:
+        """Load aggregated ERCOT outage CSV file"""
+        csv_path = Path(csv_file)
 
-        if not data_path.exists():
-            print(f"[ERROR] Directory not found: {data_dir}")
+        if not csv_path.exists():
+            print(f"[ERROR] Outage CSV not found: {csv_file}")
             return 0
 
-        zip_files = sorted(data_path.glob("*.zip"))
-        print(f"Found {len(zip_files)} daily outage zip files")
-
-        for i, zip_file in enumerate(zip_files):
-            count = self.load_outage_zip(str(zip_file))
-            total_records += count
-
-            if (i + 1) % 50 == 0:
-                print(f"  Loaded {i + 1}/{len(zip_files)} zip files ({total_records} records)")
-
-        print(f"[OK] Loaded all {len(zip_files)} daily zips ({total_records} total records)")
-        return total_records
-
-    def load_outage_zip(self, zip_file_path: str) -> int:
-        """Load all daily CSV files from ERCOT outage zip"""
+        print(f"Loading ERCOT outages from {csv_file}...")
         total_records = 0
 
         try:
-            with zipfile.ZipFile(zip_file_path, 'r') as zf:
-                for filename in zf.namelist():
-                    if filename.endswith('.csv'):
-                        with zf.open(filename) as f:
-                            total_records += self._parse_outage_csv(f, filename)
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
 
+                for row in reader:
+                    try:
+                        # Get date from various possible column names
+                        start_str = (
+                            row.get('Actual Outage Start') or
+                            row.get('Actual Outage Start Date') or
+                            row.get('Start Date') or
+                            ''
+                        ).strip()
+
+                        if not start_str:
+                            continue
+
+                        # Parse date - handle ISO format
+                        try:
+                            if 'T' in start_str:
+                                # ISO format with time
+                                start = datetime.fromisoformat(start_str.split('+')[0].split('Z')[0])
+                            else:
+                                # Date only
+                                start = datetime.fromisoformat(start_str)
+                        except (ValueError, AttributeError):
+                            continue
+
+                        date_key = start.strftime('%Y-%m-%d')
+
+                        # Get outage duration or end date
+                        end_str = (
+                            row.get('Actual End Date') or
+                            row.get('End Date') or
+                            ''
+                        ).strip()
+
+                        duration_hours = 1.0  # Default 1 hour if not specified
+
+                        if end_str:
+                            try:
+                                if 'T' in end_str:
+                                    end = datetime.fromisoformat(end_str.split('+')[0].split('Z')[0])
+                                else:
+                                    end = datetime.fromisoformat(end_str)
+
+                                duration_hours = max((end - start).total_seconds() / 3600, 0.1)
+                            except (ValueError, AttributeError):
+                                pass
+
+                        # Skip unrealistic durations
+                        if duration_hours <= 0 or duration_hours > 8760:
+                            continue
+
+                        # MW reduction (optional)
+                        mw_str = (
+                            row.get('Effective MW Reduction Due to Outage') or
+                            row.get('MW Reduction') or
+                            '0'
+                        ).strip()
+
+                        try:
+                            mw = float(mw_str.replace(',', ''))
+                        except (ValueError, AttributeError):
+                            mw = 0
+
+                        # Region (default to SOUTH for ERCOT)
+                        region = 'SOUTH'
+
+                        key = (date_key, region)
+
+                        self.outages_by_date_region[key].append({
+                            'duration_hours': duration_hours,
+                            'mw_reduction': mw,
+                            'start': start,
+                        })
+
+                        self.outage_hours_by_date_region[key] += duration_hours
+                        total_records += 1
+
+                    except (KeyError, TypeError) as e:
+                        continue
+
+            print(f"[OK] Loaded {total_records} ERCOT outage records")
             return total_records
 
         except FileNotFoundError:
-            print(f"[ERROR] Outage zip file not found: {zip_file_path}")
+            print(f"[ERROR] File not found: {csv_file}")
             return 0
         except Exception as e:
+            print(f"[ERROR] Error reading CSV: {e}")
             return 0
-
-    def _parse_outage_csv(self, file_obj, filename: str) -> int:
-        """Parse individual daily outage CSV"""
-        count = 0
-
-        try:
-            content = file_obj.read().decode('utf-8')
-            lines = content.split('\n')
-            reader = csv.DictReader(lines)
-
-            for row in reader:
-                try:
-                    start_str = row.get('Actual Outage Start', '').strip()
-                    end_str = row.get('Actual End Date', '').strip()
-                    mw_reduction = row.get('Effective MW Reduction Due to Outage', '0').strip()
-
-                    if not start_str or not end_str:
-                        continue
-
-                    # Parse dates
-                    start = datetime.strptime(start_str, '%b %d, %Y %I:%M %p')
-                    end = datetime.strptime(end_str, '%b %d, %Y %I:%M %p')
-
-                    duration_hours = (end - start).total_seconds() / 3600
-
-                    if duration_hours <= 0:
-                        continue
-
-                    date_key = start.strftime('%Y-%m-%d')
-                    region = self._infer_region_from_resource(row.get('Resource Name', ''))
-
-                    try:
-                        mw = float(mw_reduction)
-                    except ValueError:
-                        mw = 0
-
-                    key = (date_key, region)
-
-                    self.outages_by_date_zip[key].append({
-                        'resource': row.get('Resource Name', ''),
-                        'duration_hours': duration_hours,
-                        'mw_reduction': mw,
-                        'start': start,
-                        'end': end,
-                    })
-
-                    self.outage_durations_by_date_zip[key] += duration_hours
-                    count += 1
-
-                except (ValueError, KeyError):
-                    continue
-
-        except Exception as e:
-            pass
-
-        return count
-
-    def _infer_region_from_resource(self, resource_name: str) -> str:
-        """Infer ERCOT region from resource name"""
-        name_upper = resource_name.upper()
-
-        if any(x in name_upper for x in ['HOUSTON', 'COASTAL', 'CORPUS']):
-            return 'SOUTH'
-        elif any(x in name_upper for x in ['DALLAS', 'FORT', 'NORTH']):
-            return 'NORTH'
-        elif any(x in name_upper for x in ['AUSTIN', 'CENTRAL']):
-            return 'CENTRAL'
-        elif any(x in name_upper for x in ['EAST', 'TYLER']):
-            return 'EAST'
-        elif any(x in name_upper for x in ['WEST', 'ABILENE']):
-            return 'WEST'
-
-        return 'UNKNOWN'
 
     def get_outage_hours_for_date(self, date_str: str, region: str) -> float:
         """Get total outage hours for a date and region"""
         key = (date_str, region)
-        return self.outage_durations_by_date_zip.get(key, 0.0)
+        return self.outage_hours_by_date_region.get(key, 0.0)
 
     def correlate_with_weather(self, weather_events: List[Dict]) -> Dict:
         """Correlate NOAA weather events with ERCOT outages"""
@@ -182,7 +171,7 @@ class ERCOTOutageProcessor:
         """Export all outage data as summary"""
         summary = {}
 
-        for (date, region), duration in self.outage_durations_by_date_zip.items():
+        for (date, region), duration in self.outage_hours_by_date_region.items():
             if region not in summary:
                 summary[region] = []
 
