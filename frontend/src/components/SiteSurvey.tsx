@@ -112,7 +112,6 @@ export function SiteSurvey({ zip, leadId }: Props) {
   const [customerName, setCustomerName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
-  const [contactExpanded, setContactExpanded] = useState(true);
   const inputRefs = { install_area: useRef<HTMLInputElement>(null), backyard: useRef<HTMLInputElement>(null) };
 
   useEffect(() => {
@@ -224,8 +223,9 @@ export function SiteSurvey({ zip, leadId }: Props) {
     setRequesting(false);
   };
 
-  const canSubmit = photos.install_area.length > 0 && photos.backyard.length > 0 && !submitting;
-  const canRequestWindow = customerName.trim() && phone.trim() && email.trim() && !requesting;
+  const hasContactDetails = Boolean(customerName.trim() && phone.trim() && email.trim());
+  const canSubmit = photos.install_area.length > 0 && photos.backyard.length > 0 && hasContactDetails && !submitting;
+  const canRequestWindow = hasContactDetails && !requesting;
 
   if (requestSubmitted) {
     return (
@@ -419,64 +419,65 @@ export function SiteSurvey({ zip, leadId }: Props) {
         </div>
       ))}
 
+      <div style={{ marginTop: 24 }}>
+        <div className="h2" style={{ marginBottom: 8 }}>Your contact details</div>
+        <p className="small" style={{ marginBottom: 12 }}>
+          We'll need these either way - to send an installer your photos, or to follow up about scheduling.
+        </p>
+        <div className="stack">
+          <label className="small" htmlFor="customer-name">
+            Full name
+            <input
+              id="customer-name"
+              className="input"
+              value={customerName}
+              onChange={e => setCustomerName(e.target.value)}
+              placeholder="Jane Smith"
+            />
+          </label>
+          <label className="small" htmlFor="phone-number">
+            Phone number
+            <input
+              id="phone-number"
+              className="input"
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
+              placeholder="(555) 123-4567"
+            />
+          </label>
+          <label className="small" htmlFor="email-address">
+            Email address
+            <input
+              id="email-address"
+              className="input"
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="jane@example.com"
+            />
+          </label>
+        </div>
+      </div>
+
       <div style={{ marginTop: 20 }}>
         <button className="btn btn--block" disabled={!canSubmit} onClick={submit}>
           {submitting ? 'Uploading...' : 'Submit for installer review'}
         </button>
+        {!hasContactDetails && (
+          <p className="small" style={{ marginTop: 8, color: 'var(--grey-60)' }}>
+            Add your contact details above so an installer can reach you about these photos.
+          </p>
+        )}
       </div>
 
       {slots.length > 0 && (
         <div style={{ marginTop: 24 }}>
           <div className="h2" style={{ marginBottom: 8 }}>Request a sales follow-up</div>
           <p className="small" style={{ marginBottom: 12 }}>
-            Share your contact details and preferred time window. A Base sales specialist will reach out to qualify your home and confirm the next step.
+            Prefer to talk it through first? Pick a time and a Base sales specialist will reach out to qualify your
+            home and confirm the next step.
           </p>
 
-          <div style={{ marginBottom: 12 }}>
-            <button className="btn btn--ghost btn--block" onClick={() => setContactExpanded(v => !v)}>
-              {contactExpanded ? 'Hide contact details' : 'Add contact details'}
-            </button>
-          </div>
-
-          {contactExpanded && (
-            <div className="stack" style={{ marginBottom: 12 }}>
-              <label className="small" htmlFor="customer-name">
-                Full name
-                <input
-                  id="customer-name"
-                  className="input"
-                  value={customerName}
-                  onChange={e => setCustomerName(e.target.value)}
-                  placeholder="Jane Smith"
-                />
-              </label>
-              <label className="small" htmlFor="phone-number">
-                Phone number
-                <input
-                  id="phone-number"
-                  className="input"
-                  value={phone}
-                  onChange={e => setPhone(e.target.value)}
-                  placeholder="(555) 123-4567"
-                />
-              </label>
-              <label className="small" htmlFor="email-address">
-                Email address
-                <input
-                  id="email-address"
-                  className="input"
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder="jane@example.com"
-                />
-              </label>
-            </div>
-          )}
-
-          <div className="small" style={{ marginBottom: 8, color: 'var(--grey-60)' }}>
-            Pick your preferred install window
-          </div>
           <div className="options">
             {slots.slice(0, 4).map(slot => (
               <button
@@ -498,7 +499,7 @@ export function SiteSurvey({ zip, leadId }: Props) {
           {!leadId && <p className="small" style={{ marginTop: 8 }}>Save your lead first to request an install window.</p>}
           {!canRequestWindow && leadId && (
             <p className="small" style={{ marginTop: 8, color: 'var(--grey-60)' }}>
-              Add your contact details to send your preferred install window to the team.
+              Add your contact details above to send your preferred install window to the team.
             </p>
           )}
         </div>

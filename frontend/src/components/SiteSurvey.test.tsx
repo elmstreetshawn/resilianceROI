@@ -25,6 +25,13 @@ function makeRealisticFile(name: string) {
   return new File(['x'.repeat(10_000)], name, { type: 'image/jpeg' });
 }
 
+/** Fills the contact-details fields now required before either submit action. */
+async function fillContactDetails() {
+  await userEvent.type(screen.getByLabelText('Full name'), 'Jane Smith');
+  await userEvent.type(screen.getByLabelText('Phone number'), '5551234567');
+  await userEvent.type(screen.getByLabelText('Email address'), 'jane@example.com');
+}
+
 describe('SiteSurvey', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -49,7 +56,7 @@ describe('SiteSurvey', () => {
     });
   });
 
-  it('keeps submit disabled until both categories have a photo', async () => {
+  it('keeps submit disabled until both categories have a photo AND contact details', async () => {
     render(<SiteSurvey zip="75201" />);
     const submit = screen.getByText('Submit for installer review');
     expect(submit).toBeDisabled();
@@ -68,6 +75,13 @@ describe('SiteSurvey', () => {
     // do, so that failure only showed up in a real-browser (Playwright) walkthrough.
     // Kept here as a same-behavior regression guard, not a reproduction of that bug.
     await userEvent.upload(inputs[1] as HTMLInputElement, makeFile('backyard.jpg'));
+    // Both photos present, but no contact details yet - still disabled. This is the
+    // real 2026-09-27 gap: a customer used to be able to submit photos with no way
+    // for an installer to reach them.
+    expect(submit).toBeDisabled();
+    expect(screen.getByText(/add your contact details above/i)).toBeInTheDocument();
+
+    await fillContactDetails();
     await waitFor(() => expect(submit).toBeEnabled());
   });
 
@@ -119,6 +133,7 @@ describe('SiteSurvey', () => {
     const inputs = document.querySelectorAll('input[type="file"]');
     await userEvent.upload(inputs[0] as HTMLInputElement, makeFile('install.jpg'));
     await userEvent.upload(inputs[1] as HTMLInputElement, makeFile('backyard.jpg'));
+    await fillContactDetails();
 
     const submit = await screen.findByText('Submit for installer review');
     await waitFor(() => expect(submit).toBeEnabled());
@@ -148,6 +163,7 @@ describe('SiteSurvey', () => {
     const inputs = document.querySelectorAll('input[type="file"]');
     await userEvent.upload(inputs[0] as HTMLInputElement, makeFile('install.jpg'));
     await userEvent.upload(inputs[1] as HTMLInputElement, makeFile('backyard.jpg'));
+    await fillContactDetails();
     const submit = await screen.findByText('Submit for installer review');
     await waitFor(() => expect(submit).toBeEnabled());
     await userEvent.click(submit);
@@ -412,6 +428,7 @@ describe('SiteSurvey', () => {
       const inputs = document.querySelectorAll('input[type="file"]');
       await userEvent.upload(inputs[0] as HTMLInputElement, makeFile('install.jpg'));
       await userEvent.upload(inputs[1] as HTMLInputElement, makeRealisticFile('backyard.jpg'));
+      await fillContactDetails();
       expect(await screen.findByText(/File too small/i)).toBeInTheDocument();
 
       const submit = screen.getByText('Submit for installer review');
