@@ -15,8 +15,21 @@ interface Props {
   productAspectRatio: number;
 }
 
-const MIN_WIDTH = 0.05;
+const MIN_WIDTH = 0.1;
 const MAX_WIDTH = 0.7;
+
+/** Clamps a box to a sane on-screen size (width in [MIN_WIDTH, MAX_WIDTH], height
+ * derived from `aspectRatio` so it never distorts) and keeps it inside the photo.
+ * A plain function, not a component method, so the very first box render - before
+ * any state exists - already respects these bounds instead of flashing an
+ * unclamped one for a frame. */
+function clampBoxTo(b: Box, aspectRatio: number): Box {
+  const width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, b.width));
+  const height = width / aspectRatio;
+  const x = Math.max(0, Math.min(1 - width, b.x));
+  const y = Math.max(0, Math.min(1 - height, b.y));
+  return { x, y, width, height };
+}
 
 /**
  * Renders the customer's photo and the battery product image as two separate
@@ -27,7 +40,15 @@ const MAX_WIDTH = 0.7;
 export function PlacementCanvas({ photo, initialPlacement, productImageUrl, productAspectRatio }: Props) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoAspect, setPhotoAspect] = useState<number | null>(null);
-  const [box, setBox] = useState<Box>(initialPlacement);
+  // Starts as the backend's theoretical footprint ratio (30.68"/35.9"), then corrects to
+  // the product photo's own real pixel ratio once it loads. The two can differ a lot for
+  // a 3/4-angle product shot (vs. a straight-on silhouette) - if the drag box kept the
+  // footprint ratio while the image inside it used object-fit: contain, the image would
+  // letterbox inside a much taller/wider box than its own visible pixels, so you'd be
+  // dragging a big invisible box that doesn't match what you actually see and grab.
+  // Matching the box to the image's own ratio keeps the two the same thing.
+  const [productAspect, setProductAspect] = useState(productAspectRatio);
+  const [box, setBox] = useState<Box>(() => clampBoxTo(initialPlacement, productAspectRatio));
   const containerRef = useRef<HTMLDivElement>(null);
   const gesture = useRef<
     | { type: 'move'; startX: number; startY: number; boxStart: Box }
@@ -41,13 +62,7 @@ export function PlacementCanvas({ photo, initialPlacement, productImageUrl, prod
     return () => URL.revokeObjectURL(url);
   }, [photo]);
 
-  const clampBox = (b: Box): Box => {
-    const width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, b.width));
-    const height = width / productAspectRatio;
-    const x = Math.max(0, Math.min(1 - width, b.x));
-    const y = Math.max(0, Math.min(1 - height, b.y));
-    return { x, y, width, height };
-  };
+  const clampBox = (b: Box): Box => clampBoxTo(b, productAspect);
 
   const onPointerDownMove = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -79,7 +94,7 @@ export function PlacementCanvas({ photo, initialPlacement, productImageUrl, prod
     } else {
       const dx = (e.clientX - g.startX) / rect.width;
       const newWidth = g.boxStart.width + dx;
-      const newHeight = newWidth / productAspectRatio;
+      const newHeight = newWidth / productAspect;
       // Anchor the floor line (where the unit sits) and its left edge - resizing
       // shouldn't lift a floor-standing box off the ground or slide it sideways.
       setBox(clampBox({ x: g.boxStart.x, y: g.floorY - newHeight, width: newWidth, height: newHeight }));
@@ -131,11 +146,21 @@ export function PlacementCanvas({ photo, initialPlacement, productImageUrl, prod
           <img
             src={`${API_URL}${productImageUrl}`}
             alt="Battery (drag to reposition)"
-            // contain, not the default fill: the box's own shape is locked to the real
-            // product's straight-on footprint ratio (productAspectRatio), but a 3/4-angle
-            // product photo has different pixel proportions than that footprint - fill
-            // would stretch/squash it to match the box exactly. contain lets the photo
-            // keep its own proportions, scaled to fit inside.
+            onLoad={e => {
+              const real = e.currentTarget.naturalWidth / e.currentTarget.naturalHeight;
+              setProductAspect(real);
+              // Re-clamp to the real ratio now that it's known, keeping the box's width
+              // and floor line (where the unit sits) fixed - only its height changes to
+              // match the photo, so the box doesn't jump position, just resizes in place.
+              setBox(b => {
+                const height = b.width / real;
+                return clampBoxTo({ x: b.x, y: b.y + b.height - height, width: b.width, height }, real);
+              });
+            }}
+            // contain as a defensive default for the one frame before onLoad fires and
+            // the box is still using the initial guessed ratio - once corrected above,
+            // the box always matches the image's own ratio exactly, so fill vs. contain
+            // makes no visible difference, but contain never risks a stretch in between.
             style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', pointerEvents: 'none' }}
             draggable={false}
           />

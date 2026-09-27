@@ -93,11 +93,22 @@ def _valid_box(box: dict) -> bool:
 # guess, which _apply_real_aspect_ratio would otherwise blow up further to fix the ratio).
 MAX_HEIGHT_FRACTION = 0.45
 
+# A battery shorter than this is basically unusable in the UI - a wide/distant photo (a
+# backyard shot showing the whole side of a house, say) legitimately makes a realistically
+# scaled unit tiny, but "realistic" and "a 20x20px speck nobody can see or drag" are
+# different goals. Below this floor we're rendering a visible, movable placeholder for the
+# customer to reposition themselves, not asserting a precise real-world scale anymore.
+MIN_HEIGHT_FRACTION = 0.15
+
 
 def _clamp_size(box: dict) -> dict:
-    if box["height"] <= MAX_HEIGHT_FRACTION:
+    if box["height"] > MAX_HEIGHT_FRACTION:
+        target = MAX_HEIGHT_FRACTION
+    elif box["height"] < MIN_HEIGHT_FRACTION:
+        target = MIN_HEIGHT_FRACTION
+    else:
         return box
-    scale = MAX_HEIGHT_FRACTION / box["height"]
+    scale = target / box["height"]
     floor_y = box["y"] + box["height"]
     center_x = box["x"] + box["width"] / 2
     new_width = box["width"] * scale
