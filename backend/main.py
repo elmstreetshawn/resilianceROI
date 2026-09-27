@@ -491,7 +491,7 @@ def site_survey():
 
 # ============ INSTALL VISUALIZATION ("see it in your space") ============
 
-PRODUCT_IMAGE_PATH = BACKEND_DIR / "assets" / "base_battery_isolated.png"
+PRODUCT_IMAGE_PATH = BACKEND_DIR / "assets" / "base_battery_high_power_isolated.png"
 
 
 @app.route("/assets/battery-product.png", methods=["GET"])
