@@ -16,3 +16,8 @@ backend/leads.db
 backend/noaa_storm_events/
 # Offline copy of Base's live funnel (their assets and licensed font; keep local)
 offline/
+# Embedded portable Python distributions (accidentally committed at ~197MB across
+# 2758 files) - not used by the app; the real environment is .venv/. Untracked here,
+# left on disk.
+/Python/
+backend/Python/
