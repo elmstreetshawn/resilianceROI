@@ -341,8 +341,10 @@ export function NewFunnel({ screen, go, initialZip, utilityParam, leadId }: Prop
             className={`callout ${weather.risk_tier === 'HIGH' || weather.risk_tier === 'SEVERE' ? 'callout--warn' : ''}`}
             style={{ marginTop: 12 }}
           >
-            <strong>Severe weather near you:</strong> ~{weather.avg_events_per_year.toFixed(1)} events/year, most
-            commonly {weather.most_common_event_type.toLowerCase()} (NOAA Storm Events). {weather.weather_risk_summary}
+            {/* weather_risk_summary already opens with "<city> sees ~N events/year, most commonly
+                <type>" (see prediction_index.py's _narrative()) - restating that same fact here
+                first would just say it twice in a row. */}
+            <strong>Severe weather near you:</strong> {weather.weather_risk_summary} (NOAA Storm Events, EIA-861)
           </div>
         )}
         {weather && <MethodologyPanel zip={zip} />}
@@ -678,12 +680,12 @@ function buildFourSquare({
         ? {
             id: 'rate',
             value: `$${Math.round(rateSavings)}/mo`,
-            caption: 'lower than other 3-year plans at your usage, locked in - no minimum-usage fee',
+            caption: 'below the median 3-year rate at your usage, locked in - no minimum-usage fee. Not always the single cheapest plan, but never a trap.',
           }
         : {
             id: 'rate',
             value: 'At market',
-            caption: 'close to the median for other 3-year plans at your usage - fixed for the life of your plan, with no minimum-usage fee or bill-credit games',
+            caption: 'close to the median 3-year rate at your usage - fixed for the life of your plan, with no minimum-usage fee or bill-credit games',
           }
       : {
           id: 'rate',

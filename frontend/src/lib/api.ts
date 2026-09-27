@@ -265,9 +265,57 @@ export async function fetchLead(leadId: string): Promise<Lead | null> {
 }
 
 export interface VisualizeResult {
-  placement: { x: number; y: number; width: number; height: number; source: 'model' | 'default' };
+  placement: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    source: 'model' | 'default';
+    /** Whether the model judged this spot to realistically fit the unit's real
+     * footprint - only meaningful when source is 'model'; the default-box fallback
+     * has no real assessment behind it, so `fits` is just true with an empty reason. */
+    fits: boolean;
+    fit_reason: string;
+  };
   product_image_url: string;
   product_aspect_ratio: number;
+}
+
+export interface InstallPhotoCheckResult {
+  /** Whether the model saw an electrical panel/meter in the photo. Meaningless (both
+   * default true) when `checked` is false - see below. */
+  panel_visible: boolean;
+  /** Whether the model saw clear, unobstructed space near the panel in this same
+   * photo - a photo can pass one criterion and fail the other. */
+  space_visible: boolean;
+  /** One actionable sentence: what to change when retaking the photo if either
+   * criterion failed, or a short confirmation if both passed. Empty when unchecked. */
+  guidance: string;
+  /** False means the local model was unavailable, so none of the above was actually
+   * verified - distinct from the true/true default, which claims nothing failed. */
+  checked: boolean;
+}
+
+/** Checks ANY install-area photo against both real criteria at once - panel visible,
+ * space visible near it - with concrete guidance on what to change if either fails.
+ * Runs the moment each photo is picked (not just the first), so a customer who
+ * photographed the wrong thing, or the right thing too tightly cropped, finds out
+ * immediately instead of at installer review. Informational only - null/unchecked
+ * never blocks the upload. */
+export async function checkInstallPhoto(photo: File): Promise<InstallPhotoCheckResult | null> {
+  try {
+    const form = new FormData();
+    form.set('photo', photo);
+    const r = await fetch(`${API_URL}/check-install-photo`, {
+      method: 'POST',
+      body: form,
+      signal: AbortSignal.timeout(90000),
+    });
+    if (!r.ok) return null;
+    return (await r.json()) as InstallPhotoCheckResult;
+  } catch {
+    return null;
+  }
 }
 
 /** "See it in your space" - a local vision model (Ollama, no API key, nothing leaves

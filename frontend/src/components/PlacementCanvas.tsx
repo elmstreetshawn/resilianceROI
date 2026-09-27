@@ -131,7 +131,12 @@ export function PlacementCanvas({ photo, initialPlacement, productImageUrl, prod
           <img
             src={`${API_URL}${productImageUrl}`}
             alt="Battery (drag to reposition)"
-            style={{ width: '100%', height: '100%', display: 'block', pointerEvents: 'none' }}
+            // contain, not the default fill: the box's own shape is locked to the real
+            // product's straight-on footprint ratio (productAspectRatio), but a 3/4-angle
+            // product photo has different pixel proportions than that footprint - fill
+            // would stretch/squash it to match the box exactly. contain lets the photo
+            // keep its own proportions, scaled to fit inside.
+            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', pointerEvents: 'none' }}
             draggable={false}
           />
           <div

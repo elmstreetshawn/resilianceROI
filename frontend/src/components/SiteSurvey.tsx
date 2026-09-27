@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  checkInstallPhoto,
   fetchPermitting,
   fetchFollowUpWindows,
   requestSalesFollowUp,
@@ -7,6 +8,7 @@ import {
   visualizeInstall,
   type FollowUpRequestConfirmation,
   type FollowUpWindow,
+  type InstallPhotoCheckResult,
   type Permitting,
   type SiteSurveyResult,
   type VisualizeResult,
@@ -28,22 +30,81 @@ const CATEGORY_LABEL: Record<keyof PhotoSet, string> = {
   backyard: 'Backyard',
 };
 
+// Mirrors backend/main.py's ALLOWED_IMAGE_TYPES / MIN_PHOTO_BYTES / MAX_PHOTO_BYTES /
+// MIN_DIMENSION_PX exactly, so a photo that will fail server-side at submit is flagged
+// the moment it's picked instead - no network round trip needed, since a File's type
+// and size are already in hand and the browser can decode its own dimensions.
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const MIN_PHOTO_BYTES = 5_000;
+const MAX_PHOTO_BYTES = 15_000_000;
+const MIN_DIMENSION_PX = 400;
+
+function readImageDimensions(file: File): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('decode failed'));
+    };
+    img.src = url;
+  });
+}
+
+/** Same checks _validate_photo() runs server-side, run instantly client-side instead -
+ * null means it passed, a string is the same issue text the server would return. */
+async function checkPhotoQuality(file: File): Promise<string | null> {
+  if (!ALLOWED_IMAGE_TYPES.has(file.type)) return `Unsupported file type: ${file.type || 'unknown'}`;
+  if (file.size < MIN_PHOTO_BYTES) return 'File too small to be a real photo';
+  if (file.size > MAX_PHOTO_BYTES) return 'File too large (max 15MB)';
+  try {
+    const { width, height } = await readImageDimensions(file);
+    if (width < MIN_DIMENSION_PX || height < MIN_DIMENSION_PX) {
+      return `Image too small (${width}x${height}px) - retake closer or at higher resolution`;
+    }
+  } catch {
+    return 'Not a readable image file';
+  }
+  return null;
+}
+
 /**
  * Post-submission step: real permitting requirements for this address (not
  * boilerplate - see backend/municipal_permitting.py), plus install-area/backyard
- * photos with basic automated checks (file type, size, actual decoded dimensions),
- * saved for installer review. Not computer-vision site assessment - the same
- * sanity-checking an intake coordinator does before forwarding photos along.
+ * photos with feedback the moment each one is picked, not just at final submit:
+ * basic quality (file type, size, actual decoded dimensions - checked instantly in
+ * the browser, no round trip) on every photo, and for install-area specifically, two
+ * local-AI content checks: does EACH photo show a panel with clear space nearby, with
+ * concrete guidance if not (checkInstallPhoto), and once 2+ photos exist, does the
+ * specific spot chosen for the battery actually fit it (visualizeInstall). All of it
+ * is informational, never blocking -
+ * the same sanity-checking an intake coordinator does before forwarding photos along,
+ * just surfaced immediately instead of after the fact.
  */
 export function SiteSurvey({ zip, leadId }: Props) {
   const [permitting, setPermitting] = useState<Permitting | null>(null);
   const [photos, setPhotos] = useState<PhotoSet>({ install_area: [], backyard: [] });
+  // Per-photo, same index as `photos[category]`: undefined = still checking,
+  // null = passed, string = the issue.
+  const [photoIssues, setPhotoIssues] = useState<Record<keyof PhotoSet, (string | null | undefined)[]>>({
+    install_area: [],
+    backyard: [],
+  });
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<SiteSurveyResult | null>(null);
   const [visualizing, setVisualizing] = useState(false);
   const [visualization, setVisualization] = useState<VisualizeResult | null>(null);
   const [visualizedPhoto, setVisualizedPhoto] = useState<File | null>(null);
   const [visualizeFailed, setVisualizeFailed] = useState(false);
+  // Per install-area photo, same index as photos.install_area: undefined = still
+  // checking, null = the request itself failed (rare - network/dev-server down), an
+  // object = a real result (which may itself say `checked: false` if the local model
+  // just wasn't reachable - see checkInstallPhoto's doc comment).
+  const [installChecks, setInstallChecks] = useState<(InstallPhotoCheckResult | null | undefined)[]>([]);
   const [slots, setSlots] = useState<FollowUpWindow[]>([]);
   const [requestSubmitted, setRequestSubmitted] = useState<FollowUpRequestConfirmation | null>(null);
   const [requesting, setRequesting] = useState(false);
@@ -67,26 +128,62 @@ export function SiteSurvey({ zip, leadId }: Props) {
     };
   }, [zip]);
 
+  /** Runs the combined panel/space check on one install-area photo, at its index in
+   * photos.install_area - informational only, never blocks the upload (see
+   * checkInstallPhoto's doc comment). Every install-area photo gets this, not just
+   * the first: a customer might get a good combined shot on their first try, or need
+   * different guidance on their second. */
+  const checkInstallPhotoAt = async (index: number, photo: File) => {
+    setInstallChecks(c => {
+      const updated = [...c];
+      updated[index] = undefined;
+      return updated;
+    });
+    const r = await checkInstallPhoto(photo);
+    setInstallChecks(c => {
+      const updated = [...c];
+      updated[index] = r;
+      return updated;
+    });
+  };
+
   const addPhotos = (category: keyof PhotoSet, files: FileList | null) => {
     if (!files) return;
     // Snapshot now - the caller resets input.value right after this call, which
     // clears the live FileList, so reading it lazily inside the setState updater
     // would see an empty list.
     const newFiles = Array.from(files);
+    const startIndex = photos[category].length;
     setPhotos(p => ({ ...p, [category]: [...p[category], ...newFiles] }));
+    // Mark each new photo "checking" immediately, then fill in the real result as
+    // each one's (instant, local, no-network) quality check resolves.
+    setPhotoIssues(pi => ({ ...pi, [category]: [...pi[category], ...newFiles.map(() => undefined)] }));
+    newFiles.forEach((file, i) => {
+      checkPhotoQuality(file).then(issue => {
+        setPhotoIssues(pi => {
+          const updated = [...pi[category]];
+          updated[startIndex + i] = issue;
+          return { ...pi, [category]: updated };
+        });
+      });
+    });
     if (category === 'install_area') {
       setVisualization(null);
       setVisualizedPhoto(null);
       setVisualizeFailed(false);
+      newFiles.forEach((file, i) => checkInstallPhotoAt(startIndex + i, file));
     }
   };
 
   const removePhoto = (category: keyof PhotoSet, index: number) => {
-    setPhotos(p => ({ ...p, [category]: p[category].filter((_, i) => i !== index) }));
+    const remaining = photos[category].filter((_, i) => i !== index);
+    setPhotos(p => ({ ...p, [category]: remaining }));
+    setPhotoIssues(pi => ({ ...pi, [category]: pi[category].filter((_, i) => i !== index) }));
     if (category === 'install_area') {
       setVisualization(null);
       setVisualizedPhoto(null);
       setVisualizeFailed(false);
+      setInstallChecks(c => c.filter((_, i) => i !== index));
     }
   };
 
@@ -215,7 +312,7 @@ export function SiteSurvey({ zip, leadId }: Props) {
             }}
           />
           <button className="btn btn--ghost" onClick={() => inputRefs[category].current?.click()}>
-            📸 Add photo{photos[category].length > 0 ? 's' : ''}
+            📸 {photos[category].length > 0 ? 'Add another photo' : 'Add photo'}
           </button>
           {category === 'install_area' && (
             <p className="small" style={{ marginTop: 6, color: 'var(--grey-60)' }}>
@@ -225,19 +322,59 @@ export function SiteSurvey({ zip, leadId }: Props) {
           )}
           {photos[category].length > 0 && (
             <ul className="cost-list" style={{ marginTop: 8 }}>
-              {photos[category].map((f, i) => (
-                <li key={`${f.name}-${i}`}>
-                  <span>{f.name}</span>
-                  <button className="link-btn" onClick={() => removePhoto(category, i)}>
-                    Remove
-                  </button>
-                </li>
-              ))}
+              {photos[category].map((f, i) => {
+                const issue = photoIssues[category][i];
+                return (
+                  <li key={`${f.name}-${i}`}>
+                    {/* One wrapper so the row's flex layout (name+status vs. Remove) stays
+                        two columns, not three - the filename keeps its own inner span so
+                        anything matching on the filename alone still finds it. */}
+                    <span>
+                      <span>{f.name}</span>
+                      {issue === undefined && (
+                        <span className="small" style={{ color: 'var(--grey-60)' }}>
+                          {' '}
+                          · checking...
+                        </span>
+                      )}
+                      {typeof issue === 'string' && (
+                        <span className="small" style={{ color: 'var(--error-color, #d32f2f)' }}>
+                          {' '}
+                          · {issue}
+                        </span>
+                      )}
+                    </span>
+                    <button className="link-btn" onClick={() => removePhoto(category, i)}>
+                      Remove
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
 
           {category === 'install_area' && photos.install_area.length > 0 && (
             <div style={{ marginTop: 10 }}>
+              {photos.install_area.map((f, i) => {
+                const check = installChecks[i];
+                if (check === undefined) {
+                  return (
+                    <p key={`check-${f.name}-${i}`} className="small" style={{ color: 'var(--grey-60)' }}>
+                      Checking "{f.name}" for a visible panel and clear space... (local model)
+                    </p>
+                  );
+                }
+                if (check?.checked && !(check.panel_visible && check.space_visible)) {
+                  return (
+                    <div key={`check-${f.name}-${i}`} className="callout callout--warn" style={{ marginBottom: 10 }}>
+                      <strong>"{f.name}" may not be usable as-is.</strong>{' '}
+                      {check.guidance || 'Retake this photo showing both the panel and some clear space beside it.'}{' '}
+                      You can still continue - a specialist will confirm at your site visit.
+                    </div>
+                  );
+                }
+                return null;
+              })}
               {photos.install_area.length < 2 && (
                 <p className="small" style={{ color: 'var(--grey-60)' }}>
                   Add a second, wider photo to see the battery placed in your space.
@@ -261,6 +398,13 @@ export function SiteSurvey({ zip, leadId }: Props) {
                       Couldn't reach the local placement model, so this starts at a default spot - drag it to where
                       it actually belongs.
                     </p>
+                  )}
+                  {visualization.placement.source === 'model' && !visualization.placement.fits && (
+                    <div className="callout callout--warn" style={{ marginBottom: 10 }}>
+                      <strong>This spot looks tight for a 31"×36" unit.</strong>{' '}
+                      {visualization.placement.fit_reason || 'There may not be enough clear space here.'} You can
+                      still continue - a specialist will confirm the exact fit at your site visit.
+                    </div>
                   )}
                   <PlacementCanvas
                     photo={visualizedPhoto}

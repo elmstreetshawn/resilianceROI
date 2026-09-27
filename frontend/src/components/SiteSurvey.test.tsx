@@ -6,11 +6,23 @@ import * as api from '../lib/api';
 
 vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof api>('../lib/api');
-  return { ...actual, fetchPermitting: vi.fn(), submitSiteSurvey: vi.fn(), visualizeInstall: vi.fn() };
+  return {
+    ...actual,
+    fetchPermitting: vi.fn(),
+    submitSiteSurvey: vi.fn(),
+    visualizeInstall: vi.fn(),
+    checkInstallPhoto: vi.fn(),
+  };
 });
 
 function makeFile(name: string) {
   return new File(['x'.repeat(1000)], name, { type: 'image/jpeg' });
+}
+
+/** Big enough (>=5000 bytes) to pass the byte-size floor - MockImage in test/setup.ts
+ * then supplies a passing width/height so this clears every quality check. */
+function makeRealisticFile(name: string) {
+  return new File(['x'.repeat(10_000)], name, { type: 'image/jpeg' });
 }
 
 describe('SiteSurvey', () => {
@@ -26,6 +38,14 @@ describe('SiteSurvey', () => {
       typical_fee: '$100-$500',
       typical_timeline: '1-2 weeks',
       source: 'Dallas Fire Code 2021',
+    });
+    // Sane default so tests that don't care about the photo check don't see a false
+    // "not usable" warning; tests that DO care override this per-test.
+    vi.mocked(api.checkInstallPhoto).mockResolvedValue({
+      panel_visible: true,
+      space_visible: true,
+      guidance: '',
+      checked: true,
     });
   });
 
@@ -155,7 +175,7 @@ describe('SiteSurvey', () => {
     });
 
     const mockPlacement = {
-      placement: { x: 0.3, y: 0.45, width: 0.38, height: 0.45, source: 'model' as const },
+      placement: { x: 0.3, y: 0.45, width: 0.38, height: 0.45, source: 'model' as const, fits: true, fit_reason: '' },
       product_image_url: '/assets/battery-product.png',
       product_aspect_ratio: 0.855,
     };
@@ -224,6 +244,180 @@ describe('SiteSurvey', () => {
 
       await userEvent.click(screen.getAllByText('Remove')[0]);
       expect(screen.queryByAltText(/battery \(drag to reposition\)/i)).not.toBeInTheDocument();
+    });
+
+    it('warns, but does not block, when the model judges the spot too tight to fit the unit', async () => {
+      vi.mocked(api.visualizeInstall).mockResolvedValue({
+        ...mockPlacement,
+        placement: { ...mockPlacement.placement, fits: false, fit_reason: 'A parked bike blocks the wall space.' },
+      });
+      render(<SiteSurvey zip="75201" />);
+      const inputs = document.querySelectorAll('input[type="file"]');
+      await userEvent.upload(inputs[0] as HTMLInputElement, makeFile('closeup.jpg'));
+      await userEvent.upload(inputs[0] as HTMLInputElement, makeFile('wide-shot.jpg'));
+
+      await userEvent.click(await screen.findByText('👁 See it in your space'));
+      expect(await screen.findByText(/looks tight/i)).toBeInTheDocument();
+      expect(screen.getByText(/parked bike blocks the wall space/i)).toBeInTheDocument();
+      // Still just a warning - submission isn't gated on this.
+      expect(screen.getByText('Submit for installer review')).toBeInTheDocument();
+    });
+
+    it('does not warn about fit on the default (non-model) placement, which has no real assessment', async () => {
+      vi.mocked(api.visualizeInstall).mockResolvedValue({
+        ...mockPlacement,
+        placement: { ...mockPlacement.placement, source: 'default', fits: true, fit_reason: '' },
+      });
+      render(<SiteSurvey zip="75201" />);
+      const inputs = document.querySelectorAll('input[type="file"]');
+      await userEvent.upload(inputs[0] as HTMLInputElement, makeFile('closeup.jpg'));
+      await userEvent.upload(inputs[0] as HTMLInputElement, makeFile('wide-shot.jpg'));
+
+      await userEvent.click(await screen.findByText('👁 See it in your space'));
+      await screen.findByText(/couldn't reach the local placement model/i);
+      expect(screen.queryByText(/looks tight/i)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('combined panel/space check with guidance (every install-area photo)', () => {
+    it('runs automatically on a photo and shows the model\'s guidance, without blocking, when panel is not seen', async () => {
+      vi.mocked(api.checkInstallPhoto).mockResolvedValue({
+        panel_visible: false,
+        space_visible: true,
+        guidance: 'Point the camera at the gray panel box on the wall, not the yard.',
+        checked: true,
+      });
+      render(<SiteSurvey zip="75201" />);
+      const inputs = document.querySelectorAll('input[type="file"]');
+      await userEvent.upload(inputs[0] as HTMLInputElement, makeFile('closeup.jpg'));
+
+      expect(await screen.findByText(/may not be usable as-is/i)).toBeInTheDocument();
+      expect(screen.getByText(/Point the camera at the gray panel box/i)).toBeInTheDocument();
+      expect(api.checkInstallPhoto).toHaveBeenCalledTimes(1);
+      const calledWith = vi.mocked(api.checkInstallPhoto).mock.calls[0][0];
+      expect(calledWith.name).toBe('closeup.jpg');
+    });
+
+    it('also warns when the panel is visible but there is no clear space near it', async () => {
+      vi.mocked(api.checkInstallPhoto).mockResolvedValue({
+        panel_visible: true,
+        space_visible: false,
+        guidance: 'Step back a few feet so the wall space next to the panel is in frame.',
+        checked: true,
+      });
+      render(<SiteSurvey zip="75201" />);
+      const inputs = document.querySelectorAll('input[type="file"]');
+      await userEvent.upload(inputs[0] as HTMLInputElement, makeFile('too-tight.jpg'));
+
+      expect(await screen.findByText(/may not be usable as-is/i)).toBeInTheDocument();
+      expect(screen.getByText(/Step back a few feet/i)).toBeInTheDocument();
+    });
+
+    it('shows nothing extra when both panel and space are confirmed', async () => {
+      render(<SiteSurvey zip="75201" />);
+      const inputs = document.querySelectorAll('input[type="file"]');
+      await userEvent.upload(inputs[0] as HTMLInputElement, makeFile('good-shot.jpg'));
+
+      await waitFor(() => expect(api.checkInstallPhoto).toHaveBeenCalled());
+      expect(screen.queryByText(/may not be usable as-is/i)).not.toBeInTheDocument();
+    });
+
+    it('says nothing (fails open) when the local model is unavailable', async () => {
+      vi.mocked(api.checkInstallPhoto).mockResolvedValue(null);
+      render(<SiteSurvey zip="75201" />);
+      const inputs = document.querySelectorAll('input[type="file"]');
+      await userEvent.upload(inputs[0] as HTMLInputElement, makeFile('closeup.jpg'));
+
+      await waitFor(() => expect(api.checkInstallPhoto).toHaveBeenCalled());
+      expect(screen.queryByText(/may not be usable as-is/i)).not.toBeInTheDocument();
+    });
+
+    it('checks every photo added, not just the first', async () => {
+      render(<SiteSurvey zip="75201" />);
+      const inputs = document.querySelectorAll('input[type="file"]');
+      await userEvent.upload(inputs[0] as HTMLInputElement, makeFile('closeup.jpg'));
+      await waitFor(() => expect(api.checkInstallPhoto).toHaveBeenCalledTimes(1));
+
+      await userEvent.upload(inputs[0] as HTMLInputElement, makeFile('wide-shot.jpg'));
+      await waitFor(() => expect(api.checkInstallPhoto).toHaveBeenCalledTimes(2));
+      const secondCall = vi.mocked(api.checkInstallPhoto).mock.calls[1][0];
+      expect(secondCall.name).toBe('wide-shot.jpg');
+    });
+
+    it('can flag one photo while leaving another clean, keeping guidance aligned to the right photo', async () => {
+      vi.mocked(api.checkInstallPhoto)
+        .mockResolvedValueOnce({ panel_visible: true, space_visible: true, guidance: '', checked: true })
+        .mockResolvedValueOnce({
+          panel_visible: false,
+          space_visible: false,
+          guidance: 'Neither the panel nor clear space is visible - try a wider shot centered on the panel.',
+          checked: true,
+        });
+      render(<SiteSurvey zip="75201" />);
+      const inputs = document.querySelectorAll('input[type="file"]');
+      await userEvent.upload(inputs[0] as HTMLInputElement, makeFile('good.jpg'));
+      await userEvent.upload(inputs[0] as HTMLInputElement, makeFile('bad.jpg'));
+
+      const warning = await screen.findByText(/"bad.jpg" may not be usable as-is/i);
+      expect(warning).toBeInTheDocument();
+      expect(screen.queryByText(/"good.jpg" may not be usable as-is/i)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('real-time photo quality feedback (file type/size/dimensions)', () => {
+    it('flags a too-small file the moment it is picked, before any submit attempt', async () => {
+      render(<SiteSurvey zip="75201" />);
+      const inputs = document.querySelectorAll('input[type="file"]');
+      await userEvent.upload(inputs[1] as HTMLInputElement, makeFile('backyard.jpg')); // 1000 bytes
+
+      expect(await screen.findByText(/File too small to be a real photo/i)).toBeInTheDocument();
+      // Never submitted - this is purely from picking the file.
+      expect(api.submitSiteSurvey).not.toHaveBeenCalled();
+    });
+
+    it('shows no issue for a photo that passes every check', async () => {
+      render(<SiteSurvey zip="75201" />);
+      const inputs = document.querySelectorAll('input[type="file"]');
+      await userEvent.upload(inputs[1] as HTMLInputElement, makeRealisticFile('backyard.jpg'));
+
+      await screen.findByText('backyard.jpg');
+      await waitFor(() => expect(screen.queryByText(/checking\.\.\./i)).not.toBeInTheDocument());
+      expect(screen.queryByText(/too small|too large|Unsupported|not a readable/i)).not.toBeInTheDocument();
+    });
+
+    it('checks every photo in both categories, not just install-area', async () => {
+      render(<SiteSurvey zip="75201" />);
+      const inputs = document.querySelectorAll('input[type="file"]');
+      await userEvent.upload(inputs[1] as HTMLInputElement, makeFile('tiny-backyard.jpg'));
+      expect(await screen.findByText(/File too small/i)).toBeInTheDocument();
+    });
+
+    it('still allows submit even when a photo has a flagged issue (informational, not blocking)', async () => {
+      vi.mocked(api.submitSiteSurvey).mockResolvedValue({
+        zip_code: '75201',
+        lead_id: null,
+        ready_for_installer_review: false,
+        categories: {
+          install_area: { uploaded: 1, passed: 0, issues: ['File too small to be a real photo'], photos: [] },
+          backyard: { uploaded: 1, passed: 1, issues: [], photos: [{ ok: true }] },
+        },
+        saved_to: null,
+        permitting: {
+          zip_code: '75201', city: 'Dallas', jurisdiction: 'City of Dallas', permit_required: true,
+          authority: 'x', requirements: 'x', typical_fee: 'x', typical_timeline: 'x', source: 'x',
+        },
+      });
+
+      render(<SiteSurvey zip="75201" />);
+      const inputs = document.querySelectorAll('input[type="file"]');
+      await userEvent.upload(inputs[0] as HTMLInputElement, makeFile('install.jpg'));
+      await userEvent.upload(inputs[1] as HTMLInputElement, makeRealisticFile('backyard.jpg'));
+      expect(await screen.findByText(/File too small/i)).toBeInTheDocument();
+
+      const submit = screen.getByText('Submit for installer review');
+      await waitFor(() => expect(submit).toBeEnabled());
+      await userEvent.click(submit);
+      expect(await screen.findByText(/need a retake/i)).toBeInTheDocument();
     });
   });
 });

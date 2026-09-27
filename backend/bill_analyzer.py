@@ -18,13 +18,17 @@ class PowerBillAnalyzer:
         self._init_reader()
 
     def _init_reader(self):
-        """Initialize OCR reader (lazy load)"""
+        """Initialize OCR reader (lazy load). Broad except is deliberate: easyocr pulls
+        in torch, and torch failing to load is not always an ImportError - on a machine
+        with Windows Application Control (WDAC) or similar policy enforcement, importing
+        it raises OSError from inside torch's own DLL loader instead. Either way, OCR is
+        one optional feature; it must not be able to take the whole backend down at
+        startup (bill_analyzer.py's constructor runs at module import time)."""
         try:
             import easyocr
             self.reader = easyocr.Reader(['en'], gpu=False)
-        except ImportError:
-            print("[WARN] easyocr not installed - OCR features disabled")
-            print("  Install with: pip install easyocr pillow")
+        except Exception as e:
+            print(f"[WARN] OCR unavailable ({type(e).__name__}: {e}) - bill-photo upload disabled, rest of the app is unaffected")
             self.reader = None
 
     def analyze_bill_image(self, image_source: str) -> Dict:

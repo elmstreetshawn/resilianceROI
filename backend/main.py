@@ -491,7 +491,7 @@ def site_survey():
 
 # ============ INSTALL VISUALIZATION ("see it in your space") ============
 
-PRODUCT_IMAGE_PATH = BACKEND_DIR / "assets" / "battery_product.png"
+PRODUCT_IMAGE_PATH = BACKEND_DIR / "assets" / "base_battery_isolated.png"
 
 
 @app.route("/assets/battery-product.png", methods=["GET"])
@@ -536,6 +536,29 @@ def visualize_install():
         "product_image_url": "/assets/battery-product.png",
         "product_aspect_ratio": install_visualizer.PRODUCT_ASPECT_RATIO,
     })
+
+
+@app.route("/check-install-photo", methods=["POST"])
+def check_install_photo():
+    """
+    Same local vision model as /visualize-install, judging any install-area photo
+    against both real criteria at once - is the panel visible, is there clear space
+    near it - and returning concrete guidance the customer can act on. Run the moment
+    each install-area photo is picked, so a customer who photographed the wrong thing
+    finds out (and what to do about it) before they submit - not when an installer
+    opens the file days later. Informational only: `checked: false` means the local
+    model wasn't reachable, and the frontend should not treat that as a failed check.
+    """
+    if "photo" not in request.files:
+        return jsonify({"error": "photo required"}), 400
+
+    photo_bytes = request.files["photo"].read()
+    try:
+        Image.open(io.BytesIO(photo_bytes)).verify()
+    except UnidentifiedImageError:
+        return jsonify({"error": "Not a readable image file"}), 400
+
+    return jsonify(install_visualizer.assess_install_photo(photo_bytes))
 
 # ============ STAGE 2: Full Analysis ============
 
